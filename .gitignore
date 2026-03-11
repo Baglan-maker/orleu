@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+.env
+.venv
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Alembic (keep structure, ignore auto-generated)
+backend/alembic/versions/__pycache__/
+
+# ML models
+backend/ml/*.pkl
+backend/ml/*.joblib
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+*.orig.*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/settings.json
+.vscode/launch.json
+
+# Secrets
+*.env
+.env.local
+.env.production
