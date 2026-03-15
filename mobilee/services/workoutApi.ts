@@ -39,6 +39,23 @@ export interface WorkoutResponse {
   created_at:       string;
 }
 
+// List endpoint returns a lighter object (no exercises array)
+export interface WorkoutListItem {
+  id:               string;
+  workout_date:     string;
+  duration_minutes: number | null;
+  notes:            string | null;
+  total_exercises:  number;
+  total_volume:     number;
+  created_at:       string;
+}
+export interface WorkoutListResponse {
+  items:  WorkoutListItem[];
+  total:  number;
+  limit:  number;
+  offset: number;
+}
+
 // ─── Exercise API ─────────────────────────────────────────────────
 export const exerciseApi = {
   /**

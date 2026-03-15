@@ -1,10 +1,10 @@
 // mobile/app/_layout.tsx
 /**
  * Root layout — самый верхний файл приложения.
- * Здесь:
  * 1. Загружаем шрифты
  * 2. Инициализируем auth state
- * 3. Редиректим на (auth) или (tabs) в зависимости от isLoggedIn
+ * 3. Синкаем exercise library при первом входе
+ * 4. Редиректим: onboarding → (tabs) | (auth)
  */
 import { useEffect } from 'react';
 import { View } from 'react-native';
@@ -31,14 +31,14 @@ import {
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
 
-import { useAuthStore } from '../store/authStore';
-import { Colors } from '../constants/theme';
+import { useAuthStore }         from '../store/authStore';
+import { syncExerciseLibrary }  from '../services/exerciseSync';
+import { Colors }               from '../constants/theme';
 
-// Не скрываем splash пока не загрузимся
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const { isLoggedIn, isLoading, init } = useAuthStore();
+  const { isLoggedIn, isLoading, user, init } = useAuthStore();
   const router   = useRouter();
   const segments = useSegments();
 
@@ -59,30 +59,42 @@ export default function RootLayout() {
     init();
   }, []);
 
-  // Скрываем splash когда шрифты загружены и auth проверен
+  // Скрываем splash когда шрифты + auth готовы
   useEffect(() => {
     if ((fontsLoaded || fontError) && !isLoading) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError, isLoading]);
 
-  // ── Auth guard ───────────────────────────────────────────────
-  // Следим за изменением isLoggedIn и редиректим
+  // Синкаем exercise library при логине
+  useEffect(() => {
+    if (isLoggedIn) {
+      syncExerciseLibrary().catch(() => {});
+    }
+  }, [isLoggedIn]);
+
+  // ── Auth guard ─────────────────────────────────────────────────
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const seg0 = segments[0] as string | undefined;
+    const inAuthGroup  = seg0 === '(auth)';
+    const inOnboarding = seg0 === 'onboarding';
 
     if (!isLoggedIn && !inAuthGroup) {
-      // Не авторизован — на логин
       router.replace('/(auth)/login');
-    } else if (isLoggedIn && inAuthGroup) {
-      // Авторизован — в приложение
-      router.replace('/(tabs)');
+    } else if (isLoggedIn) {
+      if (inAuthGroup || inOnboarding) {
+        // Новый юзер — показываем онбординг
+        if (user && !user.onboarding_done) {
+          router.replace('/onboarding' as any);
+        } else {
+          router.replace('/(tabs)');
+        }
+      }
     }
-  }, [isLoggedIn, isLoading, segments]);
+  }, [isLoggedIn, isLoading, user, segments]);
 
-  // Ждём загрузки шрифтов и auth проверки
   if (!fontsLoaded && !fontError) return null;
   if (isLoading) return null;
 
@@ -90,8 +102,11 @@ export default function RootLayout() {
     <View style={{ flex: 1, backgroundColor: Colors.s1 }}>
       <StatusBar style="light" backgroundColor={Colors.s1}/>
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)"  options={{ animation: 'fade' }}/>
-        <Stack.Screen name="(tabs)"  options={{ animation: 'fade' }}/>
+        <Stack.Screen name="(auth)"      options={{ animation: 'fade' }}/>
+        <Stack.Screen name="(tabs)"      options={{ animation: 'fade' }}/>
+        <Stack.Screen name="onboarding"  options={{ animation: 'fade', gestureEnabled: false }}/>
+        <Stack.Screen name="history"     options={{ animation: 'slide_from_right' }}/>
+        <Stack.Screen name="profile"     options={{ animation: 'slide_from_right' }}/>
       </Stack>
     </View>
   );

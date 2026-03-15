@@ -9,8 +9,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthStore, RegisterData } from '../../store/authStore';
 import { Colors, Fonts, Spacing, Radius, AvatarThemes } from '../../constants/theme';
-import { Button } from '../../../mobilee/components/ui/Button';
-import { Input  } from '../../../mobilee/components/ui/Input';
+import { Button } from '../../components/ui/Button';
+import { Input  } from '../../components/ui/Input';
 
 // Степы регистрации: 0 = credentials, 1 = avatar + goals
 type Step = 0 | 1;
