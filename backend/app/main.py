@@ -33,10 +33,14 @@ def health():
 from app.api import auth       # noqa: E402
 from app.api import exercises  # noqa: E402
 from app.api import workouts   # noqa: E402
+from app.api import progress   # noqa: E402
+from app.api import campaigns  # noqa: E402
 
 app.include_router(auth.router,      prefix="/api/auth",      tags=["Auth"])
 app.include_router(exercises.router, prefix="/api/exercises",  tags=["Exercises"])
 app.include_router(workouts.router,  prefix="/api/workouts",   tags=["Workouts"])
+app.include_router(progress.router,  prefix="/api/progress",   tags=["Gamification"])
+app.include_router(campaigns.router, prefix="/api/campaigns",  tags=["Gamification"])
 
-# Phase 4-5:
-# from app.api import missions, campaigns, progress, predictions, coach
+# Phase 5:
+# from app.api import missions, predictions, coach

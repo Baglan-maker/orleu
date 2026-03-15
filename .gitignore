@@ -31,6 +31,9 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Claude Code
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
