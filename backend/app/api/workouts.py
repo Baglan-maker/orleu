@@ -38,19 +38,16 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
         + int(total_volume / 1000) * XP_PER_1000KG_VOL
     )
 
-    # Update streak
+    # Update streak — doc: increment if last workout was yesterday or today, reset otherwise
     now = datetime.now(timezone.utc)
     if progress.last_workout_at:
         days_gap = (now.date() - progress.last_workout_at.date()).days
-        if days_gap <= 1:
-            # Same day or next day — extend streak
-            if days_gap == 1:
-                progress.current_streak += 1
-        elif days_gap <= 2:
-            # Allow 1 rest day
-            progress.current_streak += 1
+        if days_gap == 0:
+            pass  # same day — streak unchanged
+        elif days_gap == 1:
+            progress.current_streak += 1  # consecutive day
         else:
-            progress.current_streak = 1
+            progress.current_streak = 1  # gap > 1 day — reset
     else:
         progress.current_streak = 1
 
