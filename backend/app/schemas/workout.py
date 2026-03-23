@@ -35,6 +35,15 @@ class WorkoutCreate(BaseModel):
     exercises:        List[WorkoutExerciseIn] = Field(..., min_length=1)
 
 
+class AchievementEarned(BaseModel):
+    id:          UUID
+    name:        str
+    description: str
+    icon_key:    str
+
+    model_config = {"from_attributes": True}
+
+
 class WorkoutOut(BaseModel):
     id:               UUID
     user_id:          UUID
@@ -44,6 +53,10 @@ class WorkoutOut(BaseModel):
     synced:           bool
     exercises:        List[WorkoutExerciseOut]
     total_volume:     float
+    xp_gained:        Optional[int] = None
+    new_level:        Optional[int] = None
+    leveled_up:       bool = False
+    achievements:     List[AchievementEarned] = []
     created_at:       datetime
     updated_at:       datetime
 

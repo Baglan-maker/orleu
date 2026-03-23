@@ -6,11 +6,11 @@ from datetime import datetime, timezone, timedelta
 import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
-    WorkoutListItem, WorkoutListResponse,
+    WorkoutListItem, WorkoutListResponse, AchievementEarned,
 )
 from app.services.dependencies import get_current_user
 
@@ -122,6 +122,50 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
                 progress.coins += tmpl.base_coins
 
 
+def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
+    """Check all achievements against user stats, award any newly earned ones."""
+    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    if not progress:
+        return []
+
+    # Already earned achievement IDs
+    earned_ids = {
+        row.achievement_id
+        for row in db.query(UserAchievement.achievement_id)
+        .filter(UserAchievement.user_id == user_id)
+        .all()
+    }
+
+    # Precompute stats used by condition_type
+    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
+    missions_completed = (
+        db.query(UserMission)
+        .filter(UserMission.user_id == user_id, UserMission.status == "completed")
+        .count()
+    )
+
+    stats = {
+        "streak_days":        progress.current_streak,
+        "total_sessions":     total_sessions,
+        "missions_completed": missions_completed,
+        # pr_count requires comparing exercise weights — simplified: count workouts with new max
+        "pr_count":           0,  # TODO: implement PR tracking if needed
+    }
+
+    all_achievements = db.query(Achievement).all()
+    newly_earned: list[Achievement] = []
+
+    for ach in all_achievements:
+        if ach.id in earned_ids:
+            continue
+        user_value = stats.get(ach.condition_type, 0)
+        if user_value >= ach.condition_value:
+            db.add(UserAchievement(user_id=user_id, achievement_id=ach.id))
+            newly_earned.append(ach)
+
+    return newly_earned
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
@@ -139,8 +183,12 @@ def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
     )
 
 
-def _to_workout_out(workout: Workout) -> WorkoutOut:
+def _to_workout_out(
+    workout: Workout,
+    gamification: dict | None = None,
+) -> WorkoutOut:
     ex_out = [_to_exercise_out(we) for we in workout.exercises]
+    gam = gamification or {}
     return WorkoutOut(
         id=workout.id,
         user_id=workout.user_id,
@@ -150,6 +198,10 @@ def _to_workout_out(workout: Workout) -> WorkoutOut:
         synced=workout.synced,
         exercises=ex_out,
         total_volume=round(sum(e.total_volume for e in ex_out), 2),
+        xp_gained=gam.get("xp_gained"),
+        new_level=gam.get("new_level"),
+        leveled_up=gam.get("leveled_up", False),
+        achievements=gam.get("achievements", []),
         created_at=workout.created_at,
         updated_at=workout.updated_at,
     )
@@ -225,12 +277,26 @@ def create_workout(
         .filter(WorkoutExercise.workout_id == workout.id)
         .all()
     )
-    _award_xp_and_streak(db, current_user.id, workout_exercises)
+    reward = _award_xp_and_streak(db, current_user.id, workout_exercises)
+
+    # Check achievements after all stats are updated
+    newly_earned = _check_achievements(db, current_user.id)
 
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)
     db.refresh(workout)
-    return _to_workout_out(workout)
+
+    gamification = {
+        **(reward or {}),
+        "achievements": [
+            AchievementEarned(
+                id=a.id, name=a.name,
+                description=a.description, icon_key=a.icon_key,
+            )
+            for a in newly_earned
+        ],
+    }
+    return _to_workout_out(workout, gamification=gamification)
 
 
 @router.get("", response_model=WorkoutListResponse)
