@@ -96,9 +96,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   // ── Search (debounced via useEffect) ──────────────────────────
   const runSearch = useCallback(async (q: string, f: string) => {
     setIsSearching(true);
+    // Normalize filter to lowercase to match DB values (API stores 'chest' not 'Chest')
+    const filterLower = f === 'All' ? 'All' : f.toLowerCase();
     try {
-      // Step 1: try SQLite cache
-      const rows = await searchExercises(q, f);
+      // Step 1: try SQLite cache (uses LIKE query, case-insensitive filter)
+      const rows = await searchExercises(q, filterLower);
       if (rows.length > 0 || q.trim()) {
         setResults(rows.map(r => ({
           id:           r.id,
@@ -116,16 +118,32 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
     } catch {
       // Step 2: try live API (returns real UUIDs)
       try {
-        const { data } = await exerciseApi.search(q, 50);
-        let list: ExerciseItem[] = (Array.isArray(data) ? data : (data as any).exercises ?? [])
-          .map((e: any) => ({
-            id:           e.id,
-            name:         e.name,
-            muscle_group: e.muscle_group,
-            category:     e.category,
-            is_custom:    e.is_custom ?? false,
-          }));
-        if (f !== 'All') list = list.filter(e => e.muscle_group === f);
+        let apiData: any[];
+        if (q.trim().length >= 3) {
+          // Targeted search — backend requires min 3 chars
+          const { data } = await exerciseApi.search(q, 50);
+          apiData = Array.isArray(data) ? data : (data as any).exercises ?? [];
+        } else {
+          // Browse / short query — use the cache endpoint (no length restriction)
+          const { data } = await exerciseApi.getAll();
+          apiData = Array.isArray(data) ? data : (data as any).exercises ?? [];
+          // Client-side filter for short queries
+          if (q.trim()) {
+            apiData = apiData.filter((e: any) =>
+              e.name.toLowerCase().includes(q.toLowerCase())
+            );
+          }
+        }
+        let list: ExerciseItem[] = apiData.map((e: any) => ({
+          id:           e.id,
+          name:         e.name,
+          muscle_group: e.muscle_group,
+          category:     e.category,
+          is_custom:    e.is_custom ?? false,
+        }));
+        if (filterLower !== 'all') {
+          list = list.filter(e => e.muscle_group.toLowerCase() === filterLower);
+        }
         setResults(list);
         setUseFallback(false);
       } catch {
@@ -356,7 +374,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
                     <IArrow/>
                   </TouchableOpacity>
                 ))
-              ) : !isSearching ? (
+              ) : !isSearching && query.trim() ? (
                 <View style={s.empty}>
                   <Text style={s.emptyTitle}>"{query}" not found</Text>
                   <Text style={s.emptySub}>Create it as a custom exercise</Text>

@@ -74,9 +74,9 @@ export const exerciseApi = {
    */
   create: (data: { name: string; muscle_group: string; category?: string }) =>
     api.post<ExerciseResponse>('/api/exercises', {
-      ...data,
-      category:  data.category ?? 'compound',
-      is_custom: true,
+      name:         data.name,
+      muscle_group: data.muscle_group.toLowerCase(),
+      category:     (data.category ?? 'compound').toLowerCase(),
     }),
 
   /**

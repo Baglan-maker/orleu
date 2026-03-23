@@ -80,3 +80,7 @@ class AccessTokenResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class UpdateMeRequest(BaseModel):
+    onboarding_done: bool | None = None

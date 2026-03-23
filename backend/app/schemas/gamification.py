@@ -52,3 +52,41 @@ class ChapterOut(BaseModel):
     branch_b_label: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+# ─── Missions ───────────────────────────────────────────────────
+
+class MissionTemplateOut(BaseModel):
+    id:                   UUID
+    name:                 str
+    type:                 str
+    description_template: str
+    base_target:          float
+    base_xp:              int
+    base_coins:           int
+    duration_days:        int
+
+    model_config = {"from_attributes": True}
+
+
+class UserMissionOut(BaseModel):
+    id:                  UUID
+    mission_template_id: UUID
+    name:                str
+    type:                str
+    description:         str
+    adjusted_target:     float
+    current_progress:    float
+    status:              str
+    xp_reward:           int
+    coins_reward:        int
+    started_at:          Optional[datetime] = None
+    expires_at:          Optional[datetime] = None
+    completed_at:        Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AvailableMissionsOut(BaseModel):
+    active:    List[UserMissionOut]
+    available: List[MissionTemplateOut]

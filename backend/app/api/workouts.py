@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from uuid import UUID
+from datetime import datetime, timezone, timedelta
+import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
@@ -13,6 +15,111 @@ from app.schemas.workout import (
 from app.services.dependencies import get_current_user
 
 router = APIRouter()
+
+
+# ── XP / leveling constants ────────────────────────────────────────────────────
+BASE_XP_PER_WORKOUT = 50
+XP_PER_EXERCISE     = 10
+XP_PER_1000KG_VOL   = 15
+XP_FOR_LEVEL        = lambda lvl: int(100 * (1.15 ** (lvl - 1)))
+
+
+def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExercise]):
+    """Award XP, update streak, check level-up after a workout."""
+    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    if not progress:
+        return None
+
+    # Calculate XP
+    total_volume = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+    xp_gained = (
+        BASE_XP_PER_WORKOUT
+        + len(exercises) * XP_PER_EXERCISE
+        + int(total_volume / 1000) * XP_PER_1000KG_VOL
+    )
+
+    # Update streak
+    now = datetime.now(timezone.utc)
+    if progress.last_workout_at:
+        days_gap = (now.date() - progress.last_workout_at.date()).days
+        if days_gap <= 1:
+            # Same day or next day — extend streak
+            if days_gap == 1:
+                progress.current_streak += 1
+        elif days_gap <= 2:
+            # Allow 1 rest day
+            progress.current_streak += 1
+        else:
+            progress.current_streak = 1
+    else:
+        progress.current_streak = 1
+
+    progress.longest_streak = max(progress.longest_streak, progress.current_streak)
+    progress.last_workout_at = now
+
+    # Award XP and check level-up
+    old_level = progress.level
+    progress.xp += xp_gained
+    progress.coins += 10  # base coins per workout
+
+    # Recalculate level
+    xp_remaining = progress.xp
+    new_level = 1
+    while xp_remaining >= XP_FOR_LEVEL(new_level):
+        xp_remaining -= XP_FOR_LEVEL(new_level)
+        new_level += 1
+    progress.level = new_level
+
+    leveled_up = new_level > old_level
+
+    # Auto-progress active missions
+    _progress_missions(db, user_id, exercises, total_volume)
+
+    return {"xp_gained": xp_gained, "new_level": new_level, "leveled_up": leveled_up}
+
+
+def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume: float):
+    """Update active user missions based on the completed workout."""
+    now = datetime.now(timezone.utc)
+    active_missions = (
+        db.query(UserMission)
+        .filter(
+            UserMission.user_id == user_id,
+            UserMission.status == "active",
+            UserMission.expires_at > now,
+        )
+        .all()
+    )
+
+    for um in active_missions:
+        tmpl = um.template
+        if not tmpl:
+            continue
+
+        delta = 0.0
+        if tmpl.type == "workout_count":
+            delta = 1
+        elif tmpl.type == "total_reps":
+            delta = sum(e.sets * e.reps for e in exercises)
+        elif tmpl.type == "total_volume":
+            delta = total_volume
+        elif tmpl.type == "unique_exercises":
+            delta = len(set(str(e.exercise_id) for e in exercises))
+        elif tmpl.type == "muscle_sets":
+            # Count sets across all exercises (simplified — all muscle groups)
+            delta = sum(e.sets for e in exercises)
+
+        um.current_progress += delta
+        if um.current_progress >= um.adjusted_target and um.status == "active":
+            um.status = "completed"
+            um.completed_at = now
+            # Award mission XP and coins
+            progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+            if progress:
+                um.xp_awarded = tmpl.base_xp
+                um.coins_awarded = tmpl.base_coins
+                progress.xp += tmpl.base_xp
+                progress.coins += tmpl.base_coins
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -109,6 +216,16 @@ def create_workout(
             notes=item.notes,
             order_index=item.order_index,
         ))
+
+    db.flush()
+
+    # Award XP, update streak, progress missions
+    workout_exercises = (
+        db.query(WorkoutExercise)
+        .filter(WorkoutExercise.workout_id == workout.id)
+        .all()
+    )
+    _award_xp_and_streak(db, current_user.id, workout_exercises)
 
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)
