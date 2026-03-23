@@ -1,7 +1,22 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
+from app.tasks.mission_expiry import expire_overdue_missions
+
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Run once on startup, then every hour
+    expire_overdue_missions()
+    scheduler.add_job(expire_overdue_missions, "interval", hours=1, id="expire_missions")
+    scheduler.start()
+    yield
+    scheduler.shutdown()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -9,6 +24,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs"  if settings.APP_ENV == "development" else None,
     redoc_url="/redoc" if settings.APP_ENV == "development" else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
