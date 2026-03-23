@@ -18,6 +18,9 @@ class ProgressOut(BaseModel):
     campaign_path:       Optional[str] = None
     last_workout_at:     Optional[datetime] = None
     updated_at:          Optional[datetime] = None
+    total_sessions:      int = 0
+    avatar_stage:        int = 0
+    avatar_stage_name:   str = "Rookie"
 
     model_config = {"from_attributes": True}
 
