@@ -5,15 +5,18 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.tasks.mission_expiry import expire_overdue_missions
+from app.tasks.mission_reset import weekly_mission_reset
 
 scheduler = BackgroundScheduler()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run once on startup, then every hour
+    # Expire overdue missions on startup, then every hour
     expire_overdue_missions()
     scheduler.add_job(expire_overdue_missions, "interval", hours=1, id="expire_missions")
+    # Weekly Monday reset at 00:00 UTC — abandon all remaining active missions
+    scheduler.add_job(weekly_mission_reset, "cron", day_of_week="mon", hour=0, minute=0, id="weekly_mission_reset")
     scheduler.start()
     yield
     scheduler.shutdown()
