@@ -8,7 +8,8 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthStore, RegisterData } from '../../store/authStore';
-import { Colors, Fonts, Spacing, Radius, AvatarThemes } from '../../constants/theme';
+import { Colors, Fonts, Spacing, Radius, AvatarThemes, type AvatarThemeId } from '../../constants/theme';
+import { AvatarSVG } from '../../components/avatar/AvatarSVG';
 import { Button } from '../../components/ui/Button';
 import { Input  } from '../../components/ui/Input';
 
@@ -159,15 +160,14 @@ export default function RegisterScreen() {
                     onPress={() => setAvatarId(t.id)}
                     style={[
                       styles.avatarBox,
-                      avatarId === t.id && { borderColor: t.color, backgroundColor: `${t.color}12` },
+                      avatarId === t.id && { borderColor: Colors.cr, backgroundColor: `${Colors.cr}12` },
                     ]}
                     activeOpacity={0.8}
                   >
-                    {/* Цветной круг вместо SVG (SVG Avatar добавим позже) */}
-                    <View style={[styles.avatarCircle, { backgroundColor: t.color }]}/>
+                    <AvatarSVG themeId={t.id as AvatarThemeId} stage={0} size={42} />
                     <Text style={[
                       styles.avatarName,
-                      avatarId === t.id && { color: t.color },
+                      avatarId === t.id && { color: Colors.cr },
                     ]}>
                       {t.name}
                     </Text>
@@ -277,14 +277,13 @@ const styles = StyleSheet.create({
 
   sectionLabel: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, marginBottom: 10 },
 
-  avatarRow: { flexDirection: 'row', gap: 8 },
+  avatarRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
   avatarBox: {
-    flex: 1, alignItems: 'center', paddingVertical: 12,
-    backgroundColor: Colors.s3, borderRadius: Radius.md,
+    flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8,
+    backgroundColor: Colors.s3, borderRadius: 14,
     borderWidth: 1.5, borderColor: Colors.line,
   },
-  avatarCircle: { width: 36, height: 36, borderRadius: 18, marginBottom: 6 },
-  avatarName:   { fontSize: 10, fontFamily: Fonts.bold, color: Colors.t3, letterSpacing: 0.5 },
+  avatarName: { fontSize: 9, fontFamily: Fonts.bold, color: Colors.t3, letterSpacing: 1, marginTop: 2 },
 
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

@@ -1,16 +1,22 @@
 // mobile/app/(tabs)/campaign.tsx
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  ScrollView, StyleSheet, Text,
+  ActivityIndicator, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Line, Path, Polyline, Circle, Rect } from 'react-native-svg';
+import { useFocusEffect } from 'expo-router';
+import Svg, { Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Card }        from '../../components/ui/Card';
 import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import {
+  progressApi, campaignApi, coachApi,
+  type ProgressResponse, type CampaignResponse,
+  type ChapterResponse, type CoachMessage,
+} from '../../services/gamificationApi';
 
 // ─── Icons ───────────────────────────────────────────────────────
 function ICheck()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
@@ -22,28 +28,124 @@ function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill
 function ICheck2() { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
 
 type NodeStatus = 'done' | 'active' | 'locked';
-interface CampaignNode {
-  id:     string;
-  label:  string;
-  sub:    string;
-  status: NodeStatus;
+
+interface DisplayNode {
+  id:      string;
+  label:   string;
+  sub:     string;
+  status:  NodeStatus;
+  chapter: ChapterResponse | null;
 }
 
-const NODES: CampaignNode[] = [
-  { id: 's',    label: 'Journey Begins',            sub: '',                    status: 'done'   },
-  { id: 'c1',   label: 'Ch.1 — Foundation',          sub: 'Complete · 300 XP',  status: 'done'   },
-  { id: 'fork', label: 'Week 3 — Choose your path',  sub: 'Trend: Improving',   status: 'active' },
-  { id: 'boss', label: 'Boss: Foundation Test',      sub: '4 sessions · 1 PR',  status: 'locked' },
-  { id: 'next', label: 'Peak Performance',            sub: 'Next campaign',      status: 'locked' },
-];
-
 export default function CampaignScreen() {
-  const [branch, setBranch] = useState<'A' | 'B' | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [progress,   setProgress]   = useState<ProgressResponse | null>(null);
+  const [campaign,   setCampaign]   = useState<CampaignResponse | null>(null);
+  const [chapters,   setChapters]   = useState<ChapterResponse[]>([]);
+  const [coachMsg,   setCoachMsg]   = useState<CoachMessage | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [branch,     setBranch]     = useState<'A' | 'B' | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed,  setConfirmed]  = useState(false);
 
-  function confirm() {
-    setConfirmed(true);
-    // TODO Шаг 4.8: PATCH /api/progress { campaign_path: branch }
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const [progRes, campaignsRes] = await Promise.all([
+            progressApi.get(),
+            campaignApi.list(),
+          ]);
+          if (cancelled) return;
+
+          const prog = progRes.data;
+          setProgress(prog);
+          if (prog.campaign_path) {
+            setBranch(prog.campaign_path as 'A' | 'B');
+            setConfirmed(true);
+          } else {
+            setBranch(null);
+            setConfirmed(false);
+          }
+
+          const campaigns = campaignsRes.data;
+          const current =
+            campaigns.find(c => c.id === prog.current_campaign_id) ??
+            campaigns[0] ??
+            null;
+          setCampaign(current);
+
+          if (current) {
+            const [chapRes, coachRes] = await Promise.all([
+              campaignApi.chapters(current.id),
+              coachApi.getMessages().catch(() => ({ data: [] as CoachMessage[] })),
+            ]);
+            if (!cancelled) {
+              setChapters(chapRes.data);
+              const msgs = coachRes.data;
+              setCoachMsg(msgs.length > 0 ? msgs[0] : null);
+            }
+          }
+        } catch {
+          // fall through to defaults
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [])
+  );
+
+  function getChapterStatus(chapter: ChapterResponse): NodeStatus {
+    if (!progress?.current_chapter_id) return 'locked';
+    const currentChapter = chapters.find(c => c.id === progress.current_chapter_id);
+    if (!currentChapter) return 'locked';
+    if (chapter.chapter_number < currentChapter.chapter_number) return 'done';
+    if (chapter.id === progress.current_chapter_id) return 'active';
+    return 'locked';
+  }
+
+  async function confirmPath() {
+    if (!branch || confirming) return;
+    setConfirming(true);
+    try {
+      await progressApi.patch({ campaign_path: branch });
+      setConfirmed(true);
+      setProgress(prev => prev ? { ...prev, campaign_path: branch } : prev);
+    } catch {
+      // silent — user can retry
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  // Derived values
+  const doneCount     = chapters.filter(c => getChapterStatus(c) === 'done').length;
+  const totalChapters = campaign?.total_chapters ?? chapters.length;
+  const pct           = totalChapters > 0 ? Math.round(doneCount / totalChapters * 100) : 0;
+
+  const startDone = doneCount > 0 || !!progress?.current_chapter_id;
+  const nodes: DisplayNode[] = [
+    { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null },
+    ...chapters.map(c => ({
+      id:      c.id,
+      label:   c.title,
+      sub:     getChapterStatus(c) === 'done' ? 'Complete' : '',
+      status:  getChapterStatus(c),
+      chapter: c,
+    })),
+  ];
+
+  const toGo = totalChapters - doneCount;
+
+  if (loading) {
+    return (
+      <SafeAreaView style={s.safe} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator color={Colors.cr} size="large" />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -52,31 +154,32 @@ export default function CampaignScreen() {
 
         {/* ── Header ── */}
         <View style={s.header}>
-          <View>
+          <View style={{ flex: 1, marginRight: 12 }}>
             <Text style={s.lbl}>Campaign</Text>
-            <Text style={s.pageTitle}>Foundation{'\n'}Building</Text>
+            <Text style={s.pageTitle} numberOfLines={2}>
+              {campaign?.name ?? 'No Active Campaign'}
+            </Text>
           </View>
-          <Text style={s.pct}>70%</Text>
+          <Text style={s.pct}>{pct}%</Text>
         </View>
 
         {/* ── Progress bar ── */}
         <View style={{ paddingHorizontal: Spacing.xxl, marginBottom: Spacing.xl }}>
           <ProgressBar
-            value={70}
+            value={pct}
             color={Colors.up}
             height={3}
-            leftText="7 missions done"
-            rightText="3 to boss"
+            leftText={`${doneCount} chapter${doneCount !== 1 ? 's' : ''} done`}
+            rightText={toGo > 0 ? `${toGo} to go` : 'Complete!'}
           />
         </View>
 
         {/* ── Node map ── */}
         <View style={{ paddingHorizontal: Spacing.xxl }}>
-          {NODES.map((node, i) => (
+          {nodes.map((node, i) => (
             <View key={node.id}>
               {/* Node row */}
               <View style={s.nodeRow}>
-                {/* Circle indicator */}
                 <View style={[
                   s.nodeCircle,
                   node.status === 'done'   && s.nodeDone,
@@ -88,7 +191,6 @@ export default function CampaignScreen() {
                   {node.status === 'locked' && <ILock/>}
                 </View>
 
-                {/* Text */}
                 <View style={{ flex: 1 }}>
                   <Text style={[s.nodeLabel, node.status === 'locked' && { color: Colors.t3 }]}>
                     {node.label}
@@ -105,16 +207,28 @@ export default function CampaignScreen() {
                 </View>
               </View>
 
-              {/* Branch selector — только на active node */}
-              {node.status === 'active' && !confirmed && (
+              {/* Branch selector — shown on active chapter with branch */}
+              {node.status === 'active' && node.chapter?.has_branch && !confirmed && (
                 <View style={s.branchWrap}>
                   <View style={s.branchConnector}/>
                   <Text style={s.branchTitle}>Choose your path</Text>
                   <View style={s.branchRow}>
-                    {[
-                      { k: 'A' as const, icon: <ITrendUp/>, label: 'Push Intensity',  sub: '+20% volume',    tag: 'Hard',     tc: Colors.cr   },
-                      { k: 'B' as const, icon: <IFlat/>,    label: 'Explore Variety', sub: '5 new exercises',tag: 'Moderate', tc: Colors.flat },
-                    ].map(opt => (
+                    {([
+                      {
+                        k:    'A' as const,
+                        icon: <ITrendUp/>,
+                        label: node.chapter.branch_a_label ?? 'Path A',
+                        tc:   Colors.cr,
+                        tag:  'Hard',
+                      },
+                      {
+                        k:    'B' as const,
+                        icon: <IFlat/>,
+                        label: node.chapter.branch_b_label ?? 'Path B',
+                        tc:   Colors.flat,
+                        tag:  'Moderate',
+                      },
+                    ] as const).map(opt => (
                       <TouchableOpacity
                         key={opt.k}
                         onPress={() => setBranch(opt.k)}
@@ -126,7 +240,6 @@ export default function CampaignScreen() {
                       >
                         <View style={{ marginBottom: 8 }}>{opt.icon}</View>
                         <Text style={s.branchLabel}>{opt.label}</Text>
-                        <Text style={s.branchSub}>{opt.sub}</Text>
                         <Text style={[s.branchTag, { color: opt.tc }]}>{opt.tag}</Text>
                         {branch === opt.k && (
                           <View style={[s.branchCheck, { backgroundColor: opt.tc }]}>
@@ -138,22 +251,23 @@ export default function CampaignScreen() {
                   </View>
                   {branch && (
                     <Button
-                      label={`Confirm Path ${branch}`}
-                      onPress={confirm}
+                      label={confirming ? 'Saving...' : `Confirm Path ${branch}`}
+                      onPress={confirmPath}
+                      disabled={confirming}
                       style={{ marginTop: 12 }}
                     />
                   )}
                 </View>
               )}
 
-              {confirmed && node.status === 'active' && (
+              {confirmed && node.status === 'active' && node.chapter?.has_branch && (
                 <View style={s.confirmedBadge}>
                   <Text style={s.confirmedText}>Path {branch} selected</Text>
                 </View>
               )}
 
-              {/* Connector line between nodes */}
-              {i < NODES.length - 1 && (
+              {/* Connector line */}
+              {i < nodes.length - 1 && (
                 <View style={[
                   s.connector,
                   node.status === 'done' && { backgroundColor: `${Colors.up}30` },
@@ -170,7 +284,7 @@ export default function CampaignScreen() {
             <View style={{ flex: 1 }}>
               <Text style={s.coachLabel}>AI COACH</Text>
               <Text style={s.coachText}>
-                Volume up 18% this month. Path A challenges your ceiling — your trend says you're ready.
+                {coachMsg?.message ?? 'Keep pushing — consistency is the key to your ascent.'}
               </Text>
             </View>
           </View>
@@ -213,8 +327,7 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.line,
     alignItems: 'center', position: 'relative',
   },
-  branchLabel: { fontSize: 13, fontFamily: Fonts.bold, color: Colors.t1, marginBottom: 3, textAlign: 'center' },
-  branchSub:   { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginBottom: 8, textAlign: 'center' },
+  branchLabel: { fontSize: 13, fontFamily: Fonts.bold, color: Colors.t1, marginBottom: 8, textAlign: 'center' },
   branchTag:   { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 0.8 },
   branchCheck: {
     position: 'absolute', top: 8, right: 8,

@@ -1,14 +1,16 @@
 // mobile/app/(tabs)/index.tsx
-import { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  ScrollView, StyleSheet, Text,
+  Animated, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
-import { Colors, Fonts, Radius, Spacing, AvatarThemes } from '../../constants/theme';
+import { Colors, Fonts, Radius, Spacing, AvatarThemes, getAvatarStage, type AvatarThemeId } from '../../constants/theme';
+import { AvatarSVG }     from '../../components/avatar/AvatarSVG';
+import { MomentumRing } from '../../components/avatar/MomentumRing';
 import { Card }        from '../../components/ui/Card';
 import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -22,6 +24,7 @@ import {
   selectTotalVolume,
 } from '../../store/workoutStore';
 import { useAuthStore } from '../../store/authStore';
+import { progressApi } from '../../services/gamificationApi';
 // ─── Icons ────────────────────────────────────────────────────────
 function IPlus()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={2} strokeLinecap="round"><Line x1="12" y1="5" x2="12" y2="19"/><Line x1="5" y1="12" x2="19" y2="12"/></Svg>; }
 function IFire()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>; }
@@ -29,9 +32,25 @@ function IDumbbell() { return <Svg width={14} height={14} viewBox="0 0 24 24" fi
 function ITrash()    { return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Polyline points="3 6 5 6 21 6"/><Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><Path d="M10 11v6M14 11v6"/><Path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></Svg>; }
 function IHistory()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M3 3v5h5"/><Path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><Path d="M12 7v5l4 2"/></Svg>; }
 
-// XP за тренировку (до подключения реального API)
-const XP_PER_WORKOUT = 80;
-const XP_PER_LEVEL   = 115;
+const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
+const STAGE_THRESH = [0, 6, 16, 31, 51];
+
+function RippleEffect({ color }: { color: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: 1, duration: 750, useNativeDriver: true }).start();
+  }, []);
+  const scale   = anim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 2.4] });
+  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.65, 0] });
+  return (
+    <Animated.View style={{
+      position: 'absolute', top: -8, left: -8, right: -8, bottom: -8,
+      borderRadius: 999,
+      borderWidth: 1.5, borderColor: color,
+      opacity, transform: [{ scale }],
+    }} />
+  );
+}
 
 export default function WorkoutScreen() {
   const router = useRouter();
@@ -48,11 +67,43 @@ export default function WorkoutScreen() {
     pendingCount,
   } = useWorkoutStore();
 
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch,    setShowSearch]    = useState(false);
+  const [isCelebrating, setIsCelebrating] = useState(false);
+
+  // Progress state — fetched from server on focus
+  const [totalWorkouts, setTotalWorkouts] = useState(0);
+  const [streak,        setStreak]        = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const { data } = await progressApi.get();
+          if (!cancelled) {
+            setTotalWorkouts(data.total_sessions ?? 0);
+            setStreak(data.current_streak ?? 0);
+          }
+        } catch {}
+      })();
+      return () => { cancelled = true; };
+    }, [])
+  );
+
+  // Hero derived values
+  const stage         = getAvatarStage(totalWorkouts);
+  const stageNext     = Math.min(stage + 1, 4) as typeof stage;
+  const stageProgress = stage < 4
+    ? Math.round((totalWorkouts - STAGE_THRESH[stage]) / (STAGE_THRESH[stageNext] - STAGE_THRESH[stage]) * 100)
+    : 100;
+  const toNextStage  = stage < 4 ? STAGE_THRESH[stageNext] - totalWorkouts : 0;
+  const momentum     = Math.min(100, (totalWorkouts % 7) * 14 + 40);
+  const themeColor   = avatarTheme.color;
 
   // Modals
   const [levelUpVisible,  setLevelUpVisible]  = useState(false);
   const [newLevel,        setNewLevel]        = useState(1);
+  const [xpGained,        setXpGained]        = useState(0);
   const [missionVisible,  setMissionVisible]  = useState(false);
 
   const totalReps   = selectTotalReps(exercises);
@@ -73,16 +124,21 @@ export default function WorkoutScreen() {
 
   async function finishWorkout() {
     if (!hasExercises) return;
-    const ok = await submitWorkout();
-    if (ok) {
-      // Простая симуляция level up (заменится на данные от API)
-      const currentXp = XP_PER_WORKOUT;
-      const prevLevel = Math.floor(0 / XP_PER_LEVEL) + 1;
-      const nextLevel = Math.floor(currentXp / XP_PER_LEVEL) + 1;
-      if (nextLevel > prevLevel) {
-        setNewLevel(nextLevel);
+    const result = await submitWorkout();
+    if (result) {
+      setIsCelebrating(true);
+      setTimeout(() => setIsCelebrating(false), 1000);
+      if (result.leveled_up && result.new_level != null) {
+        setXpGained(result.xp_gained ?? 0);
+        setNewLevel(result.new_level);
         setLevelUpVisible(true);
       }
+      // Refresh progress so avatar stage and streak update immediately
+      try {
+        const { data } = await progressApi.get();
+        setTotalWorkouts(data.total_sessions ?? 0);
+        setStreak(data.current_streak ?? 0);
+      } catch {}
     }
   }
 
@@ -103,7 +159,7 @@ export default function WorkoutScreen() {
             <SyncStatusIndicator pendingCount={pendingCount}/>
             <TouchableOpacity style={s.streakRow} onPress={() => router.push('/history')}>
               <IFire/>
-              <Text style={s.streakNum}>7</Text>
+              <Text style={s.streakNum}>{streak}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.avatarBtn, { backgroundColor: avatarTheme.color }]}
@@ -112,6 +168,30 @@ export default function WorkoutScreen() {
             >
               <Text style={s.avatarInitial}>{initial}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Hero ── */}
+        <View style={s.heroSection}>
+          <View style={s.ringContainer}>
+            <MomentumRing pct={momentum} color={themeColor} size={120} />
+            <View style={s.avatarInRing}>
+              <AvatarSVG
+                themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
+                stage={stage}
+                size={80}
+                celebrating={isCelebrating}
+              />
+            </View>
+            {isCelebrating && <RippleEffect color={themeColor} />}
+          </View>
+
+          <Text style={s.heroStageName}>{STAGE_NAMES[stage]}</Text>
+          <Text style={s.heroSessionCount}>
+            {totalWorkouts} sessions{toNextStage > 0 ? ` · ${toNextStage} to next stage` : ' · Max stage!'}
+          </Text>
+          <View style={s.heroBarWrap}>
+            <ProgressBar value={stageProgress} color={themeColor} height={3} />
           </View>
         </View>
 
@@ -227,7 +307,7 @@ export default function WorkoutScreen() {
       <LevelUpModal
         visible={levelUpVisible}
         level={newLevel}
-        xpGained={XP_PER_WORKOUT}
+        xpGained={xpGained}
         onClose={() => setLevelUpVisible(false)}
       />
 
@@ -288,6 +368,13 @@ const s = StyleSheet.create({
 
   historyLink: { flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', paddingVertical: 10, marginBottom: 4 },
   historyText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.t3 },
+
+  heroSection:     { alignItems: 'center', paddingBottom: 18 },
+  ringContainer:   { position: 'relative', width: 120, height: 120 },
+  avatarInRing:    { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -40 }, { translateY: -44 }] },
+  heroStageName:   { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t1, marginTop: 12, letterSpacing: 0.3 },
+  heroSessionCount:{ fontSize: 12, fontFamily: Fonts.mono, color: Colors.t3, marginTop: 3 },
+  heroBarWrap:     { width: '48%', marginTop: 10 },
 
   hintText: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', marginTop: 8 },
 });

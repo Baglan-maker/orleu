@@ -75,10 +75,19 @@ export const Colors = {
   
   // Типы аватаров — соответствуют THEMES в дизайне
   export const AvatarThemes = [
-    { id: 0, name: 'Steel',  color: '#C8343A', accent: '#E8E0D4' },
-    { id: 1, name: 'Frost',  color: '#4A7FC1', accent: '#8DB4E3' },
-    { id: 2, name: 'Forge',  color: '#B87C3A', accent: '#D4A96A' },
-    { id: 3, name: 'Shadow', color: '#7C5BB5', accent: '#A899D4' },
+    { id: 0, name: 'Steel',  color: Colors.cr   },
+    { id: 1, name: 'Frost',  color: '#4A7FC1'   },
+    { id: 2, name: 'Forge',  color: '#B87C3A'   },
+    { id: 3, name: 'Shadow', color: '#7C5BB5'   },
   ] as const;
-  
+
   export type AvatarThemeId = 0 | 1 | 2 | 3;
+  export type AvatarStage   = 0 | 1 | 2 | 3 | 4;
+
+  export function getAvatarStage(totalWorkouts: number): AvatarStage {
+    if (totalWorkouts < 6)  return 0;
+    if (totalWorkouts < 16) return 1;
+    if (totalWorkouts < 31) return 2;
+    if (totalWorkouts < 51) return 3;
+    return 4;
+  }

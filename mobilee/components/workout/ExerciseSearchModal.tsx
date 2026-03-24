@@ -141,7 +141,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
           category:     e.category,
           is_custom:    e.is_custom ?? false,
         }));
-        if (filterLower !== 'all') {
+        if (filterLower.toLowerCase() !== 'all') {
           list = list.filter(e => e.muscle_group.toLowerCase() === filterLower);
         }
         setResults(list);

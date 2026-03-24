@@ -18,7 +18,7 @@ import {
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
 const BASE_URL = __DEV__
-  ? 'http://192.168.0.103:8080'   // ← замени на свой IP
+  ? 'http://192.168.0.100:8080'   // ← замени на свой IP
   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
@@ -35,6 +35,10 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   }
   return config;
 });
+
+// ─── Force-logout callback (set by authStore to avoid circular dep) ─
+let _forceLogout: (() => void) | null = null;
+export function registerForceLogout(fn: () => void) { _forceLogout = fn; }
 
 // ─── Response interceptor — обновляем токен при 401 ──────────────
 let isRefreshing = false;
@@ -100,7 +104,7 @@ api.interceptors.response.use(
       // Refresh token тоже протух — разлогиниваем
       processQueue(refreshError, null);
       await clearAll();
-      // Zustand store сам среагирует через storage listener
+      _forceLogout?.();
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

@@ -7,12 +7,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import Svg, { Line, Path, Polyline, Polygon } from 'react-native-svg';
 
-import { Colors, Fonts, Radius, Spacing, AvatarThemes } from '../../constants/theme';
+import { Colors, Fonts, Radius, Spacing, AvatarThemes, getAvatarStage, type AvatarThemeId } from '../../constants/theme';
+import { AvatarSVG }     from '../../components/avatar/AvatarSVG';
+import { MomentumRing } from '../../components/avatar/MomentumRing';
 import { Card }        from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useAuthStore } from '../../store/authStore';
 import { progressApi, ProgressResponse } from '../../services/gamificationApi';
-import { workoutApi } from '../../services/workoutApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IUp()     { return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
@@ -31,10 +32,6 @@ function IMap({ c = Colors.cr }: { c?: string })   { return <Svg width={17} heig
 const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
 const STAGE_THRESH = [0, 6, 16, 31, 51];
 
-function getStage(workouts: number) {
-  return workouts >= 51 ? 4 : workouts >= 31 ? 3 : workouts >= 16 ? 2 : workouts >= 6 ? 1 : 0;
-}
-
 function xpForLevel(lvl: number) {
   return Math.floor(100 * Math.pow(1.15, lvl - 1));
 }
@@ -49,7 +46,7 @@ const ACHIEVEMENTS = [
 
 export default function StatsScreen() {
   const { user }   = useAuthStore();
-  const themeId    = user?.avatar_theme_id ?? 0;
+  const themeId    = (user?.avatar_theme_id ?? 0) as AvatarThemeId;
   const theme      = AvatarThemes[themeId];
 
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
@@ -61,15 +58,10 @@ export default function StatsScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const [progRes, histRes] = await Promise.all([
-            progressApi.get(),
-            workoutApi.getHistory(1, 0),  // just to get total count
-          ]);
+          const progRes = await progressApi.get();
           if (cancelled) return;
           setProgress(progRes.data);
-          // total from list response
-          const total = (progRes.data as any)?.total ?? (histRes.data as any)?.total ?? 0;
-          setTotalWorkouts(total);
+          setTotalWorkouts(progRes.data.total_sessions ?? 0);
         } catch {
           // Fallback — use defaults
         } finally {
@@ -93,7 +85,8 @@ export default function StatsScreen() {
   const xpInLevel = xp - xpUsed;
   const xpPct     = xpNext > 0 ? Math.round((xpInLevel / xpNext) * 100) : 0;
 
-  const stage     = getStage(totalWorkouts);
+  const stage    = getAvatarStage(totalWorkouts);
+  const momentum = Math.min(100, (totalWorkouts % 7) * 14 + 40);
   const stageNext = Math.min(stage + 1, 4);
   const stagePct  = stage < 4
     ? Math.round((totalWorkouts - STAGE_THRESH[stage]) / (STAGE_THRESH[stageNext] - STAGE_THRESH[stage]) * 100)
@@ -129,8 +122,11 @@ export default function StatsScreen() {
         {/* ── Level card ── */}
         <Card variant="default">
           <View style={s.levelRow}>
-            <View style={[s.avatarDot, { backgroundColor: theme.color }]}>
-              <Text style={s.avatarInitial}>{STAGE_NAMES[stage][0]}</Text>
+            <View style={s.avatarContainer}>
+              <MomentumRing pct={momentum} color={theme.color} size={82} />
+              <View style={s.avatarAbsolute}>
+                <AvatarSVG themeId={themeId} stage={stage} size={54} />
+              </View>
             </View>
 
             <View style={{ flex: 1 }}>
@@ -227,9 +223,9 @@ const s = StyleSheet.create({
   pageTitle: { fontSize: 22, fontFamily: Fonts.displayBold, color: Colors.t1, letterSpacing: -0.5, marginTop: 3 },
   score:     { fontSize: 22, fontFamily: Fonts.monoBold, color: Colors.bone, marginTop: 3 },
 
-  levelRow:      { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
-  avatarDot:     { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  avatarInitial: { fontSize: 20, fontFamily: Fonts.displayBold, color: '#fff' },
+  levelRow:       { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  avatarContainer:{ width: 82, height: 82, position: 'relative', flexShrink: 0 },
+  avatarAbsolute: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -27 }, { translateY: -35 }] },
   stageName:     { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.t3, marginBottom: 2, letterSpacing: 0.3 },
   levelNum:      { fontSize: 28, fontFamily: Fonts.displayBold, color: Colors.t1, letterSpacing: -1, lineHeight: 32 },
   stageRow:      { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: Colors.line },

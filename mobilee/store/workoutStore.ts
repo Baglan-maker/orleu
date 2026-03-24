@@ -4,7 +4,7 @@
  * Офлайн-first: сначала пишем в SQLite, потом синкаем с API.
  */
 import { create } from 'zustand';
-import { workoutApi } from '../services/workoutApi';
+import { workoutApi, WorkoutResponse } from '../services/workoutApi';
 import { saveWorkoutLocal, markWorkoutSynced, getPendingWorkouts } from '../services/database';
 
 // ─── Типы ────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ interface WorkoutState {
   setNotes:       (notes: string) => void;
   startSession:   () => void;
   resetSession:   () => void;
-  submitWorkout:  () => Promise<boolean>;
+  submitWorkout:  () => Promise<WorkoutResponse | null>;
   syncPending:    () => Promise<void>;
   loadPendingCount: () => Promise<void>;
 }
@@ -77,7 +77,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   // 5. Если ошибка API → остаётся в SQLite как pending
   submitWorkout: async () => {
     const { exercises, notes, startedAt } = get();
-    if (exercises.length === 0) return false;
+    if (exercises.length === 0) return null;
 
     set({ submitStatus: 'loading', error: null });
 
@@ -109,7 +109,6 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       set(s => ({ pendingCount: s.pendingCount + 1 }));
     } catch (dbErr) {
       console.warn('[workoutStore] SQLite save failed:', dbErr);
-      // Не критично — продолжаем и пробуем API
     }
 
     // ── Шаг 2: Отправить на API ───────────────────────────────
@@ -121,20 +120,18 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     };
 
     try {
-      await workoutApi.createWorkout(apiPayload);
-      // Успешно → помечаем синкнутым
+      const { data } = await workoutApi.createWorkout(apiPayload);
       await markWorkoutSynced(localId).catch(() => {});
       set(s => ({ pendingCount: Math.max(0, s.pendingCount - 1) }));
 
       set({ submitStatus: 'success' });
       setTimeout(() => get().resetSession(), 1500);
-      return true;
+      return data;
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? 'Workout saved offline. Will sync when connected.';
       set({ submitStatus: 'error', error: msg });
-      // Тренировка уже в SQLite — ОК
       setTimeout(() => get().resetSession(), 2000);
-      return false;
+      return null;
     }
   },
 

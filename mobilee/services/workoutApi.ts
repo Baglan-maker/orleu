@@ -30,13 +30,41 @@ export interface CreateWorkoutPayload {
   exercises:        WorkoutExercisePayload[];
 }
 
+export interface WorkoutExerciseResponse {
+  id:            string;
+  exercise_id:   string;
+  exercise_name: string;
+  muscle_group:  string;
+  sets:          number;
+  reps:          number;
+  weight_kg:     number;
+  notes:         string | null;
+  order_index:   number;
+  total_volume:  number;
+}
+
+export interface AchievementEarned {
+  id:          string;
+  name:        string;
+  description: string;
+  icon_key:    string;
+}
+
 export interface WorkoutResponse {
   id:               string;
+  user_id:          string;
   workout_date:     string;
   duration_minutes: number | null;
   notes:            string | null;
-  exercises:        Array<WorkoutExercisePayload & { id: string }>;
+  synced:           boolean;
+  exercises:        WorkoutExerciseResponse[];
+  total_volume:     number;
+  xp_gained:        number | null;
+  new_level:        number | null;
+  leveled_up:       boolean;
+  achievements:     AchievementEarned[];
   created_at:       string;
+  updated_at:       string;
 }
 
 // List endpoint returns a lighter object (no exercises array)
@@ -103,7 +131,7 @@ export const workoutApi = {
    * История тренировок для экрана Stats.
    */
   getHistory: (limit = 10, offset = 0) =>
-    api.get<WorkoutResponse[]>('/api/workouts', {
+    api.get<WorkoutListResponse>('/api/workouts', {
       params: { limit, offset },
     }),
 

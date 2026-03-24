@@ -14,6 +14,9 @@ export interface ProgressResponse {
   campaign_path:       string | null;
   last_workout_at:     string | null;
   updated_at:          string | null;
+  total_sessions:      number;
+  avatar_stage:        number;
+  avatar_stage_name:   string;
 }
 
 export interface CampaignResponse {
@@ -85,6 +88,9 @@ export const campaignApi = {
   list: () =>
     api.get<CampaignResponse[]>('/api/campaigns'),
 
+  current: () =>
+    api.get<CampaignResponse>('/api/campaigns/current'),
+
   chapters: (campaignId: string) =>
     api.get<ChapterResponse[]>(`/api/campaigns/${campaignId}/chapters`),
 };
@@ -95,4 +101,20 @@ export const missionApi = {
 
   accept: (templateId: string) =>
     api.post<UserMissionResponse>(`/api/missions/${templateId}/accept`),
+};
+
+export interface CoachMessage {
+  id:           string;
+  message:      string;
+  message_type: string;
+  created_at:   string;
+  is_read:      boolean;
+}
+
+export const coachApi = {
+  getMessages: () =>
+    api.get<CoachMessage[]>('/api/coach/messages'),
+
+  markRead: (id: string) =>
+    api.patch(`/api/coach/messages/${id}/read`),
 };
