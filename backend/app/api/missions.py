@@ -12,6 +12,7 @@ from app.schemas.gamification import (
     AvailableMissionsOut,
 )
 from app.services.dependencies import get_current_user
+from app.api.workouts import MISSION_TYPE_CATEGORY
 
 router = APIRouter()
 
@@ -89,7 +90,9 @@ def get_missions(
         # Filter by campaign path if template has a path requirement
         if t.campaign_path_filter and user_path and t.campaign_path_filter != user_path:
             continue
-        available.append(t)
+        tmpl_out = MissionTemplateOut.model_validate(t)
+        tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
+        available.append(tmpl_out)
 
     return AvailableMissionsOut(
         active=active_out + completed_out,
@@ -123,9 +126,10 @@ def accept_mission(
     if existing:
         raise HTTPException(status_code=409, detail="Mission already active")
 
-    # Max 2 active missions at a time
+    # Max 2 active missions at a time (lock rows to prevent race condition)
     active_count = (
         db.query(UserMission)
+        .with_for_update()
         .filter(
             UserMission.user_id == current_user.id,
             UserMission.status == "active",
@@ -136,12 +140,13 @@ def accept_mission(
     if active_count >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
-    # Scale target based on user level
+    # Scale target based on user level (cap at level 50 to prevent exponential blowup)
     progress = db.query(UserProgress).filter(
         UserProgress.user_id == current_user.id
     ).first()
     level = progress.level if progress else 1
-    adjusted_target = template.base_target * (template.difficulty_scale ** max(0, level - 1))
+    capped_level = min(level, 50)
+    adjusted_target = template.base_target * (template.difficulty_scale ** max(0, capped_level - 1))
 
     mission = UserMission(
         user_id=current_user.id,

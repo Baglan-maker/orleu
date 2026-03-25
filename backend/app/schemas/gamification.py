@@ -117,6 +117,7 @@ class MissionTemplateOut(BaseModel):
     id:                   UUID
     name:                 str
     type:                 str
+    category:             str = ""  # Doc §5 category: volume, consistency, intensity, variety
     description_template: str
     base_target:          float
     base_xp:              int

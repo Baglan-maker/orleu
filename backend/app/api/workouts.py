@@ -51,8 +51,9 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     else:
         progress.current_streak = 1
 
-    progress.longest_streak  = max(progress.longest_streak, progress.current_streak)
-    progress.last_workout_at = now
+    progress.longest_streak  = max(progress.longest_streak or 0, progress.current_streak)
+    # Store as midnight UTC for consistent date-gap calculations
+    progress.last_workout_at = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
     progress.total_workouts  = (progress.total_workouts or 0) + 1
 
     # Award XP and check level-up
@@ -74,6 +75,36 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     _progress_missions(db, user_id, exercises, total_volume)
 
     return {"xp_gained": xp_gained, "new_level": new_level, "leveled_up": leveled_up}
+
+
+# Doc §5 category mapping: internal type → doc category name
+MISSION_TYPE_CATEGORY: dict[str, str] = {
+    "total_reps":       "volume",
+    "total_volume":     "volume",
+    "workout_count":    "consistency",
+    "muscle_sets":      "intensity",
+    "unique_exercises": "variety",
+}
+
+
+_MUSCLE_GROUP_KEYWORDS: list[tuple[str, str]] = [
+    ("chest", "chest"),
+    ("back", "back"),
+    ("shoulder", "shoulders"),
+    ("arm", "arms"),
+    ("leg", "legs"),
+    ("core", "core"),
+    ("full body", "full_body"),
+]
+
+
+def _extract_muscle_group(description_template: str) -> str | None:
+    """Extract target muscle group from description like 'Complete {target} chest sets this week'."""
+    lower = description_template.lower()
+    for keyword, group in _MUSCLE_GROUP_KEYWORDS:
+        if keyword in lower:
+            return group
+    return None
 
 
 def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume: float):
@@ -104,14 +135,22 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
         elif tmpl.type == "unique_exercises":
             delta = len(set(str(e.exercise_id) for e in exercises))
         elif tmpl.type == "muscle_sets":
-            # Count sets across all exercises (simplified — all muscle groups)
-            delta = sum(e.sets for e in exercises)
+            # Extract target muscle from description_template, e.g. "Complete {target} chest sets this week"
+            target_muscle = _extract_muscle_group(tmpl.description_template)
+            if target_muscle:
+                delta = sum(
+                    e.sets for e in exercises
+                    if e.exercise and e.exercise.muscle_group
+                    and e.exercise.muscle_group.lower() == target_muscle
+                )
+            else:
+                delta = sum(e.sets for e in exercises)
 
         um.current_progress += delta
         if um.current_progress >= um.adjusted_target and um.status == "active":
             um.status = "completed"
             um.completed_at = now
-            # Award mission XP and coins
+            # Award mission XP and coins, then recalculate level
             progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
             if progress:
                 um.xp_awarded    = tmpl.base_xp
@@ -119,6 +158,13 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
                 progress.xp += tmpl.base_xp
                 progress.coins += tmpl.base_coins
                 progress.missions_completed_count = (progress.missions_completed_count or 0) + 1
+                # Recalculate level after mission XP
+                xp_remaining = progress.xp
+                new_level = 1
+                while xp_remaining >= XP_FOR_LEVEL(new_level):
+                    xp_remaining -= XP_FOR_LEVEL(new_level)
+                    new_level += 1
+                progress.level = new_level
 
 
 
@@ -231,6 +277,7 @@ def create_workout(
     # Award XP, update streak, progress missions
     workout_exercises = (
         db.query(WorkoutExercise)
+        .options(joinedload(WorkoutExercise.exercise))
         .filter(WorkoutExercise.workout_id == workout.id)
         .all()
     )
@@ -313,5 +360,74 @@ def delete_workout(
     current_user: User = Depends(get_current_user),
 ):
     workout = _get_own_workout(db, workout_id, current_user.id)
+    exercises = _load_with_exercises(db, workout_id)
+
+    # Reverse gamification side effects
+    progress = db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
+    if progress:
+        # 1. Reverse XP from this workout
+        total_volume = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+        xp_to_remove = (
+            BASE_XP_PER_WORKOUT
+            + len(exercises) * XP_PER_EXERCISE
+            + int(total_volume / 1000) * XP_PER_1000KG_VOL
+        )
+        progress.xp = max(0, (progress.xp or 0) - xp_to_remove)
+        progress.coins = max(0, (progress.coins or 0) - 10)  # reverse base coins
+
+        # 2. Recalculate level from new XP
+        xp_remaining = progress.xp
+        new_level = 1
+        while xp_remaining >= XP_FOR_LEVEL(new_level):
+            xp_remaining -= XP_FOR_LEVEL(new_level)
+            new_level += 1
+        progress.level = new_level
+
+        # 3. Decrement total_workouts
+        progress.total_workouts = max(0, (progress.total_workouts or 0) - 1)
+
+        # 4. Recalculate streak from remaining workouts
+        remaining_workouts = (
+            db.query(Workout)
+            .filter(Workout.user_id == current_user.id, Workout.id != workout_id)
+            .order_by(Workout.workout_date.desc())
+            .all()
+        )
+        if remaining_workouts:
+            progress.last_workout_at = datetime.combine(
+                remaining_workouts[0].workout_date,
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+            # Recalculate current streak from most recent workout backward
+            streak = 1
+            for i in range(len(remaining_workouts) - 1):
+                gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
+                if 0 < gap <= 1:
+                    streak += 1
+                elif gap == 0:
+                    continue  # same day — don't count twice
+                else:
+                    break
+            progress.current_streak = streak
+
+            # Recalculate longest_streak from full workout history
+            max_streak = 1
+            run = 1
+            for i in range(len(remaining_workouts) - 1):
+                gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
+                if 0 < gap <= 1:
+                    run += 1
+                    max_streak = max(max_streak, run)
+                elif gap == 0:
+                    continue
+                else:
+                    run = 1
+            progress.longest_streak = max_streak
+        else:
+            progress.last_workout_at = None
+            progress.current_streak = 0
+            progress.longest_streak = 0
+
     db.delete(workout)
     db.commit()

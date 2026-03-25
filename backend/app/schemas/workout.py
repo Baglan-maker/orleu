@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, date
@@ -33,6 +33,13 @@ class WorkoutCreate(BaseModel):
     duration_minutes: Optional[int] = Field(None, ge=1, le=600)
     notes:            Optional[str] = None
     exercises:        List[WorkoutExerciseIn] = Field(..., min_length=1)
+
+    @field_validator("workout_date")
+    @classmethod
+    def no_future_dates(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError("Workout date cannot be in the future")
+        return v
 
 
 class AchievementEarned(BaseModel):

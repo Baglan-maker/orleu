@@ -10,7 +10,7 @@ from app.db.database import SessionLocal
 from app.models import MissionTemplate
 
 TEMPLATES = [
-    # ── Volume missions ──
+    # ── Volume missions (Doc §5: "volume") ──
     {
         "name": "Volume Crusher",
         "type": "total_reps",
@@ -31,7 +31,7 @@ TEMPLATES = [
         "base_coins": 35,
         "duration_days": 7,
     },
-    # ── Consistency missions ──
+    # ── Consistency missions (Doc §5: "consistency") ──
     {
         "name": "Weekly Warrior",
         "type": "workout_count",
@@ -52,7 +52,7 @@ TEMPLATES = [
         "base_coins": 15,
         "duration_days": 7,
     },
-    # ── Muscle-specific missions ──
+    # ── Intensity / muscle-specific missions (Doc §5: "intensity") ──
     {
         "name": "Chest Day Champion",
         "type": "muscle_sets",
@@ -84,7 +84,7 @@ TEMPLATES = [
         "base_coins": 25,
         "duration_days": 7,
     },
-    # ── Variety missions ──
+    # ── Variety missions (Doc §5: "variety") ──
     {
         "name": "Exercise Explorer",
         "type": "unique_exercises",

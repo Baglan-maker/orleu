@@ -203,8 +203,8 @@ def try_advance_chapter(user_id: UUID, db: Session) -> dict:
 
     if next_chapter:
         progress.current_chapter_id = next_chapter.id
-        # Entering a branch chapter — clear stale path so user must choose again
-        if next_chapter.has_branch:
+        # Clear path when entering a NEW branch chapter (not when leaving one)
+        if next_chapter.has_branch and not current.has_branch:
             progress.campaign_path = None
     else:
         # ── Step 7: Campaign complete — move to next campaign ─────────────────

@@ -155,7 +155,7 @@ def time_travel(
     # ── Individual field overrides ────────────────────────────────────────────
     if body.set_streak is not None:
         progress.current_streak = body.set_streak
-        progress.longest_streak = max(progress.longest_streak, body.set_streak)
+        progress.longest_streak = max(progress.longest_streak or 0, body.set_streak)
 
     if body.set_total_workouts is not None:
         progress.total_workouts = body.set_total_workouts
@@ -287,7 +287,7 @@ def seed_workout_history(
 
         if body.consecutive:
             progress.current_streak = body.count
-            progress.longest_streak = max(progress.longest_streak, body.count)
+            progress.longest_streak = max(progress.longest_streak or 0, body.count)
             progress.last_workout_at = datetime.now(timezone.utc)
 
         # Award XP for seeded workouts

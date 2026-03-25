@@ -6,8 +6,11 @@ Auth endpoints:
   POST /api/auth/logout    — удалить сессию
   GET  /api/auth/me        — данные текущего юзера
 """
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -85,7 +88,10 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.refresh(user)
 
     # Assign first campaign + chapter 1 so the campaign screen is not empty
-    try_advance_chapter(user.id, db)
+    try:
+        try_advance_chapter(user.id, db)
+    except Exception as exc:
+        logger.warning("Failed to assign initial campaign for user %s: %s", user.id, exc)
 
     return TokenResponse(
         access_token  = access_token,
