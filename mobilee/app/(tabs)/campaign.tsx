@@ -16,6 +16,7 @@ import {
   progressApi, campaignApi, coachApi,
   type ProgressResponse, type CampaignResponse,
   type ChapterResponse, type CoachMessage,
+  type ChapterRequirement, type CampaignCurrentResponse,
 } from '../../services/gamificationApi';
 
 // ─── Icons ───────────────────────────────────────────────────────
@@ -26,8 +27,6 @@ function ITrendUp()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fi
 function IFlat()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={2} strokeLinecap="round"><Line x1="5" y1="12" x2="19" y2="12"/><Polyline points="14 7 19 12 14 17"/></Svg>; }
 function IBrain()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
 function ICheck2()   { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
-function IDumbbell() { return <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M6.5 6.5h11"/><Path d="M6.5 17.5h11"/><Path d="M3 9.5h2v5H3z"/><Path d="M19 9.5h2v5h-2z"/><Path d="M5 7.5v9"/><Path d="M19 7.5v9"/></Svg>; }
-function ITarget()   { return <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Circle cx="12" cy="12" r="10"/><Circle cx="12" cy="12" r="6"/><Circle cx="12" cy="12" r="2"/></Svg>; }
 function IStar()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fill={Colors.flat} stroke={Colors.flat} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></Svg>; }
 function ICoin()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Circle cx="12" cy="12" r="10"/><Path d="M12 6v2m0 8v2m-4-6h8"/></Svg>; }
 function ITrophy()   { return <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M6 9H4a2 2 0 0 1-2-2V5h4"/><Path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/><Path d="M6 5h12v6a6 6 0 0 1-12 0V5z"/><Path d="M12 17v4"/><Path d="M8 21h8"/></Svg>; }
@@ -42,53 +41,33 @@ interface DisplayNode {
   chapter: ChapterResponse | null;
 }
 
-// ── Chapter conditions definition (mirrors backend gamification_service.py) ──
-interface Condition { label: string; key: 'workouts' | 'missions' | 'path'; target: number; }
-
-function getChapterConditions(chapterNumber: number): Condition[] {
-  switch (chapterNumber) {
-    case 1: return [{ label: 'Log workouts', key: 'workouts', target: 3 }];
-    case 2: return [{ label: 'Log workouts', key: 'workouts', target: 6 }, { label: 'Complete missions', key: 'missions', target: 1 }];
-    case 3: return [{ label: 'Choose your path', key: 'path', target: 1 }];
-    case 4: return [{ label: 'Log workouts', key: 'workouts', target: 12 }, { label: 'Complete missions', key: 'missions', target: 3 }];
-    case 5: return [{ label: 'Log workouts', key: 'workouts', target: 20 }, { label: 'Complete missions', key: 'missions', target: 6 }];
-    default: return [];
-  }
-}
-
-function getConditionValue(condition: Condition, progress: ProgressResponse, pathChosen: boolean): number {
-  if (condition.key === 'workouts')  return progress.total_workouts ?? 0;
-  if (condition.key === 'missions')  return progress.missions_completed_count ?? 0;
-  if (condition.key === 'path')      return pathChosen ? 1 : 0;
-  return 0;
-}
-
-// ── Chapter condition description strings ──
-function chapterRequirementSummary(chapterNumber: number): string {
-  switch (chapterNumber) {
-    case 1: return '3 workouts';
-    case 2: return '6 workouts · 1 mission';
-    case 3: return 'Choose your path';
-    case 4: return '12 workouts · 3 missions · path chosen';
-    case 5: return '20 workouts · 6 missions';
-    default: return '';
-  }
-}
-
 // ── Campaign completion XP bonus (mirrors backend CAMPAIGN_COMPLETION_BONUS) ──
 const CAMPAIGN_BONUS_XP    = 500;
 const CAMPAIGN_BONUS_COINS = 200;
 
+// ── Locked chapter requirement summaries (static, for locked nodes only) ──
+function lockedChapterSummary(chapterNumber: number): string {
+  switch (chapterNumber) {
+    case 1: return '3 workouts';
+    case 2: return '3 days this week · full workout';
+    case 3: return 'Choose your path';
+    case 4: return 'Path-based challenge · 2 missions';
+    case 5: return 'Campaign endgame challenge';
+    default: return 'Complete previous chapters';
+  }
+}
+
 export default function CampaignScreen() {
-  const [progress,    setProgress]    = useState<ProgressResponse | null>(null);
-  const [campaign,    setCampaign]    = useState<CampaignResponse | null>(null);
-  const [chapters,    setChapters]    = useState<ChapterResponse[]>([]);
-  const [coachMsg,    setCoachMsg]    = useState<CoachMessage | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [branch,      setBranch]      = useState<'A' | 'B' | null>(null);
-  const [confirming,  setConfirming]  = useState(false);
-  const [confirmed,   setConfirmed]   = useState(false);
-  const [expandedId,  setExpandedId]  = useState<string | null>(null);
+  const [progress,      setProgress]      = useState<ProgressResponse | null>(null);
+  const [campaign,      setCampaign]       = useState<CampaignResponse | null>(null);
+  const [chapters,      setChapters]       = useState<ChapterResponse[]>([]);
+  const [requirements,  setRequirements]   = useState<ChapterRequirement[]>([]);
+  const [coachMsg,      setCoachMsg]       = useState<CoachMessage | null>(null);
+  const [loading,       setLoading]        = useState(true);
+  const [branch,        setBranch]         = useState<'A' | 'B' | null>(null);
+  const [confirming,    setConfirming]     = useState(false);
+  const [confirmed,     setConfirmed]      = useState(false);
+  const [expandedId,    setExpandedId]     = useState<string | null>(null);
   const [campaignBanner, setCampaignBanner] = useState<string | null>(null);
 
   const lastSeenCampaignId = useRef<string | null>(null);
@@ -99,9 +78,9 @@ export default function CampaignScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const [progRes, campaignsRes] = await Promise.all([
+          const [progRes, currentRes] = await Promise.all([
             progressApi.get(),
-            campaignApi.list(),
+            campaignApi.current().catch(() => null),
           ]);
           if (cancelled) return;
 
@@ -115,30 +94,27 @@ export default function CampaignScreen() {
             setConfirmed(false);
           }
 
-          const campaigns = campaignsRes.data;
-          const current =
-            campaigns.find(c => c.id === prog.current_campaign_id) ??
-            campaigns[0] ??
-            null;
-          setCampaign(current);
+          if (currentRes) {
+            const cur: CampaignCurrentResponse = currentRes.data;
+            setCampaign(cur.campaign);
+            // Map ChapterWithStatus to ChapterResponse shape (same fields + status ignored here)
+            setChapters(cur.chapters as unknown as ChapterResponse[]);
+            setRequirements(cur.requirements ?? []);
 
-          if (current && lastSeenCampaignId.current !== null && current.id !== lastSeenCampaignId.current) {
-            setCampaignBanner(current.name);
-            if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
-            bannerTimerRef.current = setTimeout(() => setCampaignBanner(null), 4000);
-          }
-          lastSeenCampaignId.current = current?.id ?? null;
+            if (lastSeenCampaignId.current !== null && cur.campaign.id !== lastSeenCampaignId.current) {
+              setCampaignBanner(cur.campaign.name);
+              if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+              bannerTimerRef.current = setTimeout(() => setCampaignBanner(null), 4000);
+            }
+            lastSeenCampaignId.current = cur.campaign.id;
 
-          if (current) {
-            const [chapRes, coachRes] = await Promise.all([
-              campaignApi.chapters(current.id),
-              coachApi.getMessages().catch(() => ({ data: [] as CoachMessage[] })),
-            ]);
+            const coachRes = await coachApi.getMessages().catch(() => ({ data: [] as CoachMessage[] }));
             if (!cancelled) {
-              setChapters(chapRes.data);
               const msgs = coachRes.data;
               setCoachMsg(msgs.length > 0 ? msgs[0] : null);
             }
+          } else {
+            lastSeenCampaignId.current = null;
           }
         } catch {
           // fall through to defaults
@@ -155,7 +131,9 @@ export default function CampaignScreen() {
     if (!progress?.current_chapter_id) return 'locked';
     const currentChapter = chapters.find(c => c.id === progress.current_chapter_id);
     if (!currentChapter) return 'locked';
-    if (chapter.chapter_number < currentChapter.chapter_number) return 'done';
+    const currentNum = (currentChapter as unknown as { chapter_number: number }).chapter_number;
+    const chapNum    = (chapter as unknown as { chapter_number: number }).chapter_number;
+    if (chapNum < currentNum) return 'done';
     if (chapter.id === progress.current_chapter_id) return 'active';
     return 'locked';
   }
@@ -183,13 +161,17 @@ export default function CampaignScreen() {
   const startDone = doneCount > 0 || !!progress?.current_chapter_id || allComplete;
   const nodes: DisplayNode[] = [
     { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null },
-    ...chapters.map(c => ({
-      id:      c.id,
-      label:   c.title,
-      sub:     getChapterStatus(c) === 'done' ? 'Complete' : chapterRequirementSummary(c.chapter_number),
-      status:  getChapterStatus(c),
-      chapter: c,
-    })),
+    ...chapters.map(c => {
+      const st = getChapterStatus(c);
+      const chapNum = (c as unknown as { chapter_number: number }).chapter_number;
+      return {
+        id:      c.id,
+        label:   c.title,
+        sub:     st === 'done' ? 'Complete' : st === 'locked' ? lockedChapterSummary(chapNum) : '',
+        status:  st,
+        chapter: c,
+      };
+    }),
   ];
 
   const toGo = totalChapters - doneCount;
@@ -248,7 +230,6 @@ export default function CampaignScreen() {
               You've reached the summit. New campaigns coming soon.
             </Text>
 
-            {/* Campaign completion rewards summary */}
             <View style={s.rewardRow}>
               <View style={s.rewardPill}>
                 <IStar/>
@@ -325,7 +306,9 @@ export default function CampaignScreen() {
                   <View style={s.expandPanel}>
                     {node.chapter ? (
                       <>
-                        <Text style={s.expandChapterNum}>Chapter {node.chapter.chapter_number}</Text>
+                        <Text style={s.expandChapterNum}>
+                          Chapter {(node.chapter as unknown as { chapter_number: number }).chapter_number}
+                        </Text>
 
                         {/* Narrative */}
                         {node.chapter.narrative_text ? (
@@ -338,55 +321,84 @@ export default function CampaignScreen() {
                           </Text>
                         )}
 
-                        {/* ── Conditions ── */}
-                        {getChapterConditions(node.chapter.chapter_number).length > 0 && (
+                        {/* ── Requirements ── */}
+                        {node.status !== 'locked' && (
                           <View style={s.conditionsBlock}>
-                            <Text style={s.conditionsTitle}>Requirements</Text>
-                            {getChapterConditions(node.chapter.chapter_number).map((cond, ci) => {
-                              if (cond.key === 'path') {
-                                // Path condition — just a label, no number progress
-                                const done = node.status === 'done' || pathChosen;
-                                return (
-                                  <View key={ci} style={s.condRow}>
-                                    <View style={[s.condDot, done && s.condDotDone]}/>
-                                    <Text style={[s.condLabel, done && s.condLabelDone]}>
-                                      Choose your path below
-                                    </Text>
-                                    {done && (
-                                      <View style={s.condCheck}><ICheck2/></View>
-                                    )}
-                                  </View>
-                                );
-                              }
-                              const current = progress
-                                ? getConditionValue(cond, progress, pathChosen)
-                                : 0;
-                              const capped   = Math.min(current, cond.target);
-                              const pctCond  = Math.round(capped / cond.target * 100);
-                              const isDone   = node.status === 'done' || capped >= cond.target;
-                              return (
-                                <View key={ci} style={s.condBlock}>
-                                  <View style={s.condRow}>
-                                    <View style={cond.key === 'workouts' ? {} : {}}>
-                                      {cond.key === 'workouts' ? <IDumbbell/> : <ITarget/>}
-                                    </View>
-                                    <Text style={[s.condLabel, isDone && s.condLabelDone]}>
-                                      {cond.label}
-                                    </Text>
-                                    <Text style={[s.condProgress, isDone && { color: Colors.up }]}>
-                                      {isDone && node.status === 'done'
-                                        ? `${cond.target}/${cond.target}`
-                                        : `${capped}/${cond.target}`}
-                                    </Text>
-                                  </View>
-                                  {node.status !== 'done' && (
-                                    <View style={s.condBarBg}>
-                                      <View style={[s.condBarFill, { width: `${pctCond}%`, backgroundColor: isDone ? Colors.up : Colors.cr }]}/>
-                                    </View>
-                                  )}
+                            <Text style={s.conditionsTitle}>
+                              {node.status === 'done' ? 'Completed' : 'Requirements'}
+                            </Text>
+
+                            {node.status === 'done' ? (
+                              // Completed chapter — just show a checkmark row
+                              <View style={s.condRow}>
+                                <View style={[s.condDot, s.condDotDone]}/>
+                                <Text style={[s.condLabel, s.condLabelDone]}>All requirements met</Text>
+                                <View style={s.condCheck}><ICheck2/></View>
+                              </View>
+                            ) : (
+                              // Active chapter — show live requirements from API
+                              requirements.length === 0 ? (
+                                <View style={s.condRow}>
+                                  <View style={[s.condDot, pathChosen && s.condDotDone]}/>
+                                  <Text style={[s.condLabel, pathChosen && s.condLabelDone]}>
+                                    Choose your path below
+                                  </Text>
+                                  {pathChosen && <View style={s.condCheck}><ICheck2/></View>}
                                 </View>
-                              );
-                            })}
+                              ) : (
+                                requirements.map((req, ci) => {
+                                  // Boolean requirement (target === 1, current is 0 or 1)
+                                  if (req.target === 1 && req.current <= 1) {
+                                    return (
+                                      <View key={ci} style={s.condRow}>
+                                        <View style={[s.condDot, req.met && s.condDotDone]}/>
+                                        <Text style={[s.condLabel, req.met && s.condLabelDone]}>
+                                          {req.label}
+                                        </Text>
+                                        {req.met && <View style={s.condCheck}><ICheck2/></View>}
+                                      </View>
+                                    );
+                                  }
+                                  // Numeric requirement — show bar
+                                  const capped   = Math.min(req.current, req.target);
+                                  const pctCond  = req.target > 0 ? Math.round(capped / req.target * 100) : 0;
+                                  return (
+                                    <View key={ci} style={s.condBlock}>
+                                      <View style={s.condRow}>
+                                        <View style={[s.condDot, req.met && s.condDotDone]}/>
+                                        <Text style={[s.condLabel, req.met && s.condLabelDone]}>
+                                          {req.label}
+                                        </Text>
+                                        <Text style={[s.condProgress, req.met && { color: Colors.up }]}>
+                                          {Math.round(capped)}/{Math.round(req.target)}
+                                        </Text>
+                                      </View>
+                                      <View style={s.condBarBg}>
+                                        <View style={[
+                                          s.condBarFill,
+                                          { width: `${pctCond}%`, backgroundColor: req.met ? Colors.up : Colors.cr },
+                                        ]}/>
+                                      </View>
+                                    </View>
+                                  );
+                                })
+                              )
+                            )}
+                          </View>
+                        )}
+
+                        {/* Locked chapter — show static summary */}
+                        {node.status === 'locked' && (
+                          <View style={s.conditionsBlock}>
+                            <Text style={s.conditionsTitle}>Requires</Text>
+                            <View style={s.condRow}>
+                              <View style={s.condDot}/>
+                              <Text style={s.condLabel}>
+                                {lockedChapterSummary(
+                                  (node.chapter as unknown as { chapter_number: number }).chapter_number
+                                )}
+                              </Text>
+                            </View>
                           </View>
                         )}
 
@@ -408,8 +420,7 @@ export default function CampaignScreen() {
                                 +{node.chapter.reward_coins} Coins
                               </Text>
                             </View>
-                            {/* Campaign completion bonus on final chapter */}
-                            {node.chapter.chapter_number === totalChapters && (
+                            {(node.chapter as unknown as { chapter_number: number }).chapter_number === totalChapters && (
                               <View style={s.rewardPillBonus}>
                                 <Text style={s.rewardPillBonusText}>+{CAMPAIGN_BONUS_XP} XP Campaign Bonus</Text>
                               </View>
@@ -447,22 +458,22 @@ export default function CampaignScreen() {
                     <View style={s.branchRow}>
                       {([
                         {
-                          k:       'A' as const,
-                          icon:    <ITrendUp/>,
-                          label:   node.chapter.branch_a_label ?? 'Path A',
-                          tc:      Colors.cr,
-                          tag:     'Intensity',
-                          desc:    'Heavy lifts, max effort, strength-focused missions ahead.',
-                          req:     '12 workouts · 3 missions',
+                          k:    'A' as const,
+                          icon: <ITrendUp/>,
+                          label: node.chapter.branch_a_label ?? 'Path A',
+                          tc:   Colors.cr,
+                          tag:  'Strength',
+                          desc: 'PRs, heavy lifts, beat your personal records.',
+                          req:  'Beat a PR · 2 missions',
                         },
                         {
-                          k:       'B' as const,
-                          icon:    <IFlat/>,
-                          label:   node.chapter.branch_b_label ?? 'Path B',
-                          tc:      Colors.flat,
-                          tag:     'Volume',
-                          desc:    'Consistent reps, steady progress, endurance missions ahead.',
-                          req:     '12 workouts · 3 missions',
+                          k:    'B' as const,
+                          icon: <IFlat/>,
+                          label: node.chapter.branch_b_label ?? 'Path B',
+                          tc:   Colors.flat,
+                          tag:  'Endurance',
+                          desc: 'Consistent reps, more training days, volume missions.',
+                          req:  '4 days in a week · 2 missions',
                         },
                       ] as const).map(opt => (
                         <TouchableOpacity

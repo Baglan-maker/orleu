@@ -123,3 +123,18 @@ GOALS_FIELD_MAP: Dict[str, str] = {
     "carbs_g":   "carbs_goal_g",
     "fat_g":     "fat_goal_g",
 }
+
+
+# ── Recent Foods ───────────────────────────────────────────────────────────────
+
+class RecentFoodItemOut(BaseModel):
+    """Most-recently-used unique food items for the current user."""
+    food_item_id:      UUID
+    name:              str
+    brand:             Optional[str] = None
+    calories_per_100g: float
+    protein_per_100g:  float
+    carbs_per_100g:    float
+    fat_per_100g:      float
+    last_used_date:    date
+    typical_quantity_g: float

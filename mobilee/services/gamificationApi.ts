@@ -22,9 +22,11 @@ export interface ProgressResponse {
   campaign_path:            string | null;
   last_workout_at:          string | null;
   updated_at:               string | null;
-  total_sessions:           number;
-  total_workouts:           number;
-  missions_completed_count: number;
+  total_sessions:             number;
+  total_workouts:             number;
+  missions_completed_count:   number;
+  campaign_started_workouts:  number;
+  campaign_started_missions:  number;
   avatar_stage:             number;
   avatar_stage_name:        string;
   achievements:             AchievementItem[];
@@ -46,6 +48,34 @@ export interface ChapterResponse {
   title:          string;
   narrative_text: string | null;
   has_branch:     boolean;
+  branch_a_label: string | null;
+  branch_b_label: string | null;
+  reward_xp:      number;
+  reward_coins:   number;
+}
+
+export interface ChapterRequirement {
+  label:   string;
+  current: number;
+  target:  number;
+  met:     boolean;
+}
+
+export interface CampaignCurrentResponse {
+  campaign:        CampaignResponse;
+  current_chapter: ChapterResponse | null;
+  chapters:        ChapterWithStatus[];
+  campaign_path:   string | null;
+  requirements:    ChapterRequirement[];
+}
+
+export interface ChapterWithStatus {
+  id:             string;
+  chapter_number: number;
+  title:          string;
+  status:         'completed' | 'active' | 'locked';
+  has_branch:     boolean;
+  narrative_text: string | null;
   branch_a_label: string | null;
   branch_b_label: string | null;
   reward_xp:      number;
@@ -102,7 +132,7 @@ export const campaignApi = {
     api.get<CampaignResponse[]>('/api/campaigns'),
 
   current: () =>
-    api.get<CampaignResponse>('/api/campaigns/current'),
+    api.get<CampaignCurrentResponse>('/api/campaigns/current'),
 
   chapters: (campaignId: string) =>
     api.get<ChapterResponse[]>(`/api/campaigns/${campaignId}/chapters`),

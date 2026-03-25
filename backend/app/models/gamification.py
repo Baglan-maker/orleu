@@ -51,6 +51,8 @@ class UserProgress(Base):
     campaign_path            = Column(String(1), nullable=True)
     total_workouts           = Column(Integer, default=0)
     missions_completed_count = Column(Integer, default=0)
+    campaign_started_workouts = Column(Integer, default=0, nullable=False)
+    campaign_started_missions = Column(Integer, default=0, nullable=False)
     last_workout_at          = Column(DateTime(timezone=True), nullable=True)
     updated_at               = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

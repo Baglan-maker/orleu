@@ -47,6 +47,8 @@ def _build_progress_out(
         total_sessions=total_sessions,
         total_workouts=progress.total_workouts or 0,
         missions_completed_count=progress.missions_completed_count or 0,
+        campaign_started_workouts=progress.campaign_started_workouts or 0,
+        campaign_started_missions=progress.campaign_started_missions or 0,
         avatar_stage=stage,
         avatar_stage_name=stage_name,
         achievements=achievements or [],

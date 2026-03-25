@@ -5,9 +5,11 @@ from uuid import UUID
 
 from app.db.database import get_db
 from app.models import User, Campaign, CampaignChapter, UserProgress
-from app.schemas.gamification import CampaignOut, ChapterOut, ChapterWithStatusOut, CampaignCurrentOut
+from app.schemas.gamification import (
+    CampaignOut, ChapterOut, ChapterWithStatusOut, CampaignCurrentOut, ChapterRequirementOut,
+)
 from app.services.dependencies import get_current_user
-from app.services.gamification_service import CHAPTER_REWARDS
+from app.services.gamification_service import CHAPTER_REWARDS, get_chapter_requirements
 
 router = APIRouter()
 
@@ -84,11 +86,26 @@ def get_current_campaign(
         for ch in chapters
     ]
 
+    # Build live requirements for the active chapter only
+    requirements: list[ChapterRequirementOut] = []
+    if current_chapter:
+        raw_reqs = get_chapter_requirements(current_user.id, progress, current_chapter, db)
+        requirements = [
+            ChapterRequirementOut(
+                label=r.label,
+                current=r.current,
+                target=r.target,
+                met=r.met,
+            )
+            for r in raw_reqs
+        ]
+
     return CampaignCurrentOut(
         campaign=CampaignOut.model_validate(campaign),
         current_chapter=ChapterOut.model_validate(current_chapter) if current_chapter else None,
         chapters=chapters_with_status,
         campaign_path=progress.campaign_path,
+        requirements=requirements,
     )
 
 

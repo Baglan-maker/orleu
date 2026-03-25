@@ -20,6 +20,7 @@ from app.schemas.nutrition import (
     NutritionGoalsPatch,
     NutritionLogCreate,
     NutritionLogOut,
+    RecentFoodItemOut,
     GOALS_FIELD_MAP,
     MEAL_TYPES,
 )
@@ -69,6 +70,22 @@ def _log_to_out(log: NutritionLog) -> NutritionLogOut:
         protein_g=log.protein_g,
         carbs_g=log.carbs_g,
         fat_g=log.fat_g,
+    )
+
+
+def _recent_log_to_out(log: NutritionLog) -> RecentFoodItemOut:
+    """Build RecentFoodItemOut from a NutritionLog (uses its food_item relationship)."""
+    food = log.food_item
+    return RecentFoodItemOut(
+        food_item_id=food.id,
+        name=food.name,
+        brand=food.brand,
+        calories_per_100g=food.calories_per100g,
+        protein_per_100g=food.protein_per100g,
+        carbs_per_100g=food.carbs_per100g,
+        fat_per_100g=food.fat_per100g,
+        last_used_date=log.date,
+        typical_quantity_g=log.quantity_g,
     )
 
 
@@ -127,6 +144,37 @@ def create_custom_food(
     db.commit()
     db.refresh(item)
     return _food_to_out(item)
+
+
+# ── Recent Foods ──────────────────────────────────────────────────────────────
+
+@router.get("/recent", response_model=List[RecentFoodItemOut])
+def get_recent_foods(
+    limit: int = Query(default=8, ge=1, le=20),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the N most recently used unique food items for the current user."""
+    # Fetch recent logs ordered newest-first; over-fetch to handle duplicates
+    logs = (
+        db.query(NutritionLog)
+        .filter(NutritionLog.user_id == current_user.id)
+        .order_by(NutritionLog.date.desc())
+        .limit(limit * 20)
+        .all()
+    )
+
+    seen: set = set()
+    result: list = []
+    for log in logs:
+        fid = str(log.food_item_id)
+        if fid not in seen:
+            seen.add(fid)
+            result.append(log)
+        if len(result) >= limit:
+            break
+
+    return [_recent_log_to_out(log) for log in result]
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────

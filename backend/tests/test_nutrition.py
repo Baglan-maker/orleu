@@ -27,10 +27,10 @@ class TestCustomFood:
     def test_create_custom_food(self, client, db, auth_header, test_user):
         resp = client.post("/api/nutrition/foods", json={
             "name": "My Protein Shake",
-            "calories_per100g": 120,
-            "protein_per100g": 25,
-            "carbs_per100g": 5,
-            "fat_per100g": 2,
+            "calories_per_100g": 120,
+            "protein_per_100g": 25,
+            "carbs_per_100g": 5,
+            "fat_per_100g": 2,
         }, headers=auth_header)
         assert resp.status_code == 201
         data = resp.json()
@@ -40,10 +40,10 @@ class TestCustomFood:
     def test_create_food_no_auth(self, client, db):
         resp = client.post("/api/nutrition/foods", json={
             "name": "Unauthorized",
-            "calories_per100g": 100,
-            "protein_per100g": 10,
-            "carbs_per100g": 10,
-            "fat_per100g": 5,
+            "calories_per_100g": 100,
+            "protein_per_100g": 10,
+            "carbs_per_100g": 10,
+            "fat_per_100g": 5,
         })
         assert resp.status_code in (401, 403)
 
@@ -61,7 +61,7 @@ class TestNutritionLog:
         }, headers=auth_header)
         assert resp.status_code == 201
         data = resp.json()
-        assert data["food_name"] == "Chicken Breast"
+        assert data["food_item"]["name"] == "Chicken Breast"
         assert data["meal_type"] == "lunch"
         # 200g of chicken: 165*2=330 cal, 31*2=62g protein
         assert abs(data["calories"] - 330) < 1
@@ -98,7 +98,7 @@ class TestDailyNutrition:
         resp = client.get("/api/nutrition/daily", params={"date": str(date.today())}, headers=auth_header)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["totals"]["calories"] == 0
+        assert data["calories"] == 0
 
     def test_daily_with_logs(self, client, db, auth_header, test_user, sample_foods):
         food_id = str(sample_foods[0].id)
@@ -118,7 +118,7 @@ class TestDailyNutrition:
         resp = client.get("/api/nutrition/daily", params={"date": str(date.today())}, headers=auth_header)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["totals"]["calories"] > 0
+        assert data["calories"] > 0
         assert "lunch" in data["meals"]
         assert "dinner" in data["meals"]
 
@@ -153,19 +153,19 @@ class TestNutritionGoals:
         resp = client.get("/api/nutrition/goals", headers=auth_header)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["calories_goal"] == 2500
-        assert data["protein_goal_g"] == 160
+        assert data["calories"] == 2500
+        assert data["protein_g"] == 160
 
     def test_update_goals(self, client, db, auth_header, test_user):
         resp = client.patch("/api/nutrition/goals", json={
-            "calories_goal": 2000,
-            "protein_goal_g": 180,
+            "calories": 2000,
+            "protein_g": 180,
         }, headers=auth_header)
         assert resp.status_code == 200
         data = resp.json()
-        assert data["calories_goal"] == 2000
-        assert data["protein_goal_g"] == 180
+        assert data["calories"] == 2000
+        assert data["protein_g"] == 180
 
         # Verify persistence
         resp2 = client.get("/api/nutrition/goals", headers=auth_header)
-        assert resp2.json()["calories_goal"] == 2000
+        assert resp2.json()["calories"] == 2000

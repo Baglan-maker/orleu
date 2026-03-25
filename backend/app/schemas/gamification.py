@@ -43,9 +43,11 @@ class ProgressOut(BaseModel):
     campaign_path:           Optional[str] = None
     last_workout_at:         Optional[datetime] = None
     updated_at:              Optional[datetime] = None
-    total_sessions:          int = 0
-    total_workouts:          int = 0
-    missions_completed_count: int = 0
+    total_sessions:             int = 0
+    total_workouts:             int = 0
+    missions_completed_count:   int = 0
+    campaign_started_workouts:  int = 0
+    campaign_started_missions:  int = 0
     avatar_stage:            int = 0
     avatar_stage_name:       str = "Rookie"
     achievements:            List[AchievementOut] = []
@@ -87,6 +89,13 @@ class ChapterOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChapterRequirementOut(BaseModel):
+    label:   str
+    current: float
+    target:  float
+    met:     bool
+
+
 class ChapterWithStatusOut(BaseModel):
     id:             UUID
     chapter_number: int
@@ -107,6 +116,7 @@ class CampaignCurrentOut(BaseModel):
     current_chapter: Optional[ChapterOut] = None
     chapters:        List[ChapterWithStatusOut]
     campaign_path:   Optional[str] = None
+    requirements:    List[ChapterRequirementOut] = []
 
     model_config = {"from_attributes": True}
 

@@ -107,9 +107,9 @@ export default function DebugScreen() {
   const seedFb = useFeedback();
 
   // ── Set counters
-  const [totalWorkouts,     setTotalWorkoutsVal]    = useState('0');
-  const [streakDays,        setStreakDaysVal]        = useState('0');
-  const [missionsCompleted, setMissionsCompletedVal] = useState('0');
+  const [campaignWorkouts,  setCampaignWorkoutsVal]  = useState('0');
+  const [streakDays,        setStreakDaysVal]         = useState('0');
+  const [campaignMissions,  setCampaignMissionsVal]  = useState('0');
   const counterFb = useFeedback();
 
   // ── Campaign
@@ -158,11 +158,11 @@ export default function DebugScreen() {
   // ─── Set counters ─────────────────────────────────────────────
   async function handleApplyCounters() {
     const ok = await timeTravelPost({
-      set_total_workouts:     parseInt(totalWorkouts, 10) || 0,
-      set_streak:             parseInt(streakDays, 10) || 0,
-      set_missions_completed: parseInt(missionsCompleted, 10) || 0,
-      check_achievements:     true,
-      advance_chapter:        true,
+      set_campaign_workouts: parseInt(campaignWorkouts, 10) || 0,
+      set_campaign_streak:   parseInt(streakDays, 10) || 0,
+      set_campaign_missions: parseInt(campaignMissions, 10) || 0,
+      check_achievements:    true,
+      advance_chapter:       true,
     }, counterFb);
     if (ok) {
       counterFb.setSuccess('Applied — achievements checked');
@@ -238,11 +238,11 @@ export default function DebugScreen() {
         <SectionLabel label="SET COUNTERS" />
         <View style={s.row}>
           <View style={s.inputWrap}>
-            <Text style={s.inputLabel}>Total Workouts</Text>
+            <Text style={s.inputLabel}>Workouts in Campaign</Text>
             <TextInput
               style={s.input}
-              value={totalWorkouts}
-              onChangeText={setTotalWorkoutsVal}
+              value={campaignWorkouts}
+              onChangeText={setCampaignWorkoutsVal}
               keyboardType="number-pad"
               placeholderTextColor={Colors.t3}
             />
@@ -259,11 +259,11 @@ export default function DebugScreen() {
           </View>
         </View>
         <View style={s.inputWrap}>
-          <Text style={s.inputLabel}>Missions Completed</Text>
+          <Text style={s.inputLabel}>Missions in Campaign</Text>
           <TextInput
             style={s.input}
-            value={missionsCompleted}
-            onChangeText={setMissionsCompletedVal}
+            value={campaignMissions}
+            onChangeText={setCampaignMissionsVal}
             keyboardType="number-pad"
             placeholderTextColor={Colors.t3}
           />

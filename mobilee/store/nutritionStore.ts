@@ -19,6 +19,18 @@ export interface FoodItem {
   is_custom:         boolean;
 }
 
+export interface RecentFoodItem {
+  food_item_id:      string;
+  name:              string;
+  brand:             string | null;
+  calories_per_100g: number;
+  protein_per_100g:  number;
+  carbs_per_100g:    number;
+  fat_per_100g:      number;
+  last_used_date:    string;
+  typical_quantity_g: number;
+}
+
 export interface NutritionLogEntry {
   id:         string;
   food_item:  FoodItem;
@@ -60,19 +72,22 @@ export interface NutritionGoals {
 }
 
 interface NutritionState {
-  todayData:    NutritionDayResponse | null;
-  goals:        NutritionGoals | null;
-  selectedDate: string;
-  isLoading:    boolean;
-  error:        string | null;
+  todayData:           NutritionDayResponse | null;
+  goals:               NutritionGoals | null;
+  selectedDate:        string;
+  isLoading:           boolean;
+  error:               string | null;
+  recentFoods:         RecentFoodItem[];
+  recentFoodsLoadedAt: number | null;
 
-  loadDay:     (date: string) => Promise<void>;
-  logFood:     (date: string, mealType: MealType, foodItemId: string, quantityG: number) => Promise<void>;
-  removeLog:   (logId: string) => Promise<void>;
-  loadGoals:   () => Promise<void>;
-  updateGoals: (goals: NutritionGoals) => Promise<void>;
-  setDate:     (date: string) => void;
-  syncPending: () => Promise<void>;
+  loadDay:          (date: string) => Promise<void>;
+  logFood:          (date: string, mealType: MealType, foodItemId: string, quantityG: number) => Promise<void>;
+  removeLog:        (logId: string) => Promise<void>;
+  loadGoals:        () => Promise<void>;
+  updateGoals:      (goals: NutritionGoals) => Promise<void>;
+  setDate:          (date: string) => void;
+  syncPending:      () => Promise<void>;
+  loadRecentFoods:  () => Promise<void>;
 }
 
 /** Returns today as YYYY-MM-DD in **local** time (not UTC). */
@@ -83,13 +98,17 @@ export function localDateISO(d: Date = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+const RECENT_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+
 // ─── Store ───────────────────────────────────────────────────────
 export const useNutritionStore = create<NutritionState>((set, get) => ({
-  todayData:    null,
-  goals:        null,
-  selectedDate: localDateISO(),
-  isLoading:    false,
-  error:        null,
+  todayData:           null,
+  goals:               null,
+  selectedDate:        localDateISO(),
+  isLoading:           false,
+  error:               null,
+  recentFoods:         [],
+  recentFoodsLoadedAt: null,
 
   loadDay: async (date) => {
     set({ isLoading: true, error: null });
@@ -173,6 +192,15 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
         const { selectedDate } = get();
         await get().loadDay(selectedDate);
       }
+    } catch {}
+  },
+
+  loadRecentFoods: async () => {
+    const { recentFoodsLoadedAt } = get();
+    if (recentFoodsLoadedAt && Date.now() - recentFoodsLoadedAt < RECENT_CACHE_MS) return;
+    try {
+      const { data } = await api.get<RecentFoodItem[]>('/api/nutrition/recent', { params: { limit: 8 } });
+      set({ recentFoods: data, recentFoodsLoadedAt: Date.now() });
     } catch {}
   },
 }));

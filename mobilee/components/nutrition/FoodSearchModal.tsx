@@ -1,7 +1,8 @@
 // mobile/components/nutrition/FoodSearchModal.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,7 +18,12 @@ import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Button } from '../ui/Button';
 import { api } from '../../services/api';
-import { type FoodItem, type MealType } from '../../store/nutritionStore';
+import {
+  type FoodItem,
+  type MealType,
+  type RecentFoodItem,
+  useNutritionStore,
+} from '../../store/nutritionStore';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function ISearch() {
@@ -48,6 +54,14 @@ function ILeaf() {
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M12 2C7 2 3 6 3 11c0 4 2.5 7.5 6 9.5C10.5 22 12 22 12 22s1.5 0 3-1.5C18.5 18.5 21 15 21 11c0-5-4-9-9-9z"/>
       <Path d="M12 2 Q12 12 8 18" strokeLinecap="round"/>
+    </Svg>
+  );
+}
+function IClock() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx="12" cy="12" r="9"/>
+      <Polyline points="12 7 12 12 15 14"/>
     </Svg>
   );
 }
@@ -87,7 +101,19 @@ function macroSummary(food: FoodItem, grams: number): { kcal: number; p: number;
   };
 }
 
+function lastUsedLabel(isoDate: string): string {
+  const today    = new Date();
+  const lastUsed = new Date(isoDate + 'T00:00:00');
+  const diffDays = Math.floor((today.getTime() - lastUsed.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7)  return `${diffDays} days ago`;
+  return lastUsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
+  const { recentFoods, loadRecentFoods } = useNutritionStore();
+
   const [view,       setView]       = useState<ModalView>('search');
   const [query,      setQuery]      = useState('');
   const [results,    setResults]    = useState<FoodItem[]>([]);
@@ -104,6 +130,22 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
   const [cCarb,      setCCarb]      = useState('');
   const [cFat,       setCFat]       = useState('');
   const [saving,     setSaving]     = useState(false);
+
+  const recentOpacity = useRef(new Animated.Value(1)).current;
+
+  // Load recent foods when modal opens
+  useEffect(() => {
+    if (visible) loadRecentFoods();
+  }, [visible]);
+
+  // Fade recent section out/in as user crosses 2-char threshold
+  useEffect(() => {
+    Animated.timing(recentOpacity, {
+      toValue:         query.length >= 2 ? 0 : 1,
+      duration:        150,
+      useNativeDriver: true,
+    }).start();
+  }, [query.length >= 2]);
 
   // ── Debounced search ──────────────────────────────────────────
   const runSearch = useCallback(async (q: string) => {
@@ -127,10 +169,24 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
     return () => clearTimeout(timer);
   }, [query, visible, view, runSearch]);
 
-  function selectFood(food: FoodItem) {
+  function selectFood(food: FoodItem, preGrams: number = 100) {
     setSelected(food);
-    setGrams('100');
+    setGrams(String(preGrams));
     setView('quantity');
+  }
+
+  function selectRecent(item: RecentFoodItem) {
+    const food: FoodItem = {
+      id:                item.food_item_id,
+      name:              item.name,
+      brand:             item.brand,
+      calories_per_100g: item.calories_per_100g,
+      protein_per_100g:  item.protein_per_100g,
+      carbs_per_100g:    item.carbs_per_100g,
+      fat_per_100g:      item.fat_per_100g,
+      is_custom:         false,
+    };
+    selectFood(food, Math.round(item.typical_quantity_g));
   }
 
   function handleAdd() {
@@ -164,6 +220,7 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
         protein_per_100g:  parseFloat(cPro)  || 0,
         carbs_per_100g:    parseFloat(cCarb) || 0,
         fat_per_100g:      parseFloat(cFat)  || 0,
+        is_custom:         true,
       });
     } finally {
       setSaving(false);
@@ -178,8 +235,9 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
 
   function handleClose() { reset(); onClose(); }
 
-  const gramsNum  = Math.max(1, Math.min(2000, parseFloat(grams) || 0));
-  const preview   = selected ? macroSummary(selected, gramsNum) : null;
+  const gramsNum = Math.max(1, Math.min(2000, parseFloat(grams) || 0));
+  const preview  = selected ? macroSummary(selected, gramsNum) : null;
+  const showRecent = recentFoods.length > 0 && query.length < 2;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
@@ -343,6 +401,42 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
             </View>
 
             <ScrollView style={s.list} keyboardShouldPersistTaps="handled">
+
+              {/* ── Recent foods (shown when query < 2 chars) ── */}
+              {showRecent && (
+                <Animated.View style={{ opacity: recentOpacity }}>
+                  <Text style={s.sectionLbl}>Recent</Text>
+                  {recentFoods.map(item => (
+                    <TouchableOpacity
+                      key={item.food_item_id}
+                      style={s.recentRow}
+                      onPress={() => selectRecent(item)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={s.recentClockWrap}><IClock/></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.foodName}>{item.name}</Text>
+                        <Text style={s.foodMeta}>
+                          {item.calories_per_100g} kcal · {item.protein_per_100g}g P per 100g
+                        </Text>
+                      </View>
+                      <Text style={s.lastUsed}>{lastUsedLabel(item.last_used_date)}</Text>
+                      <IArrow/>
+                    </TouchableOpacity>
+                  ))}
+                </Animated.View>
+              )}
+
+              {/* ── Divider ── */}
+              {showRecent && (
+                <View style={s.dividerRow}>
+                  <View style={s.dividerLine}/>
+                  <Text style={s.dividerText}>or search below</Text>
+                  <View style={s.dividerLine}/>
+                </View>
+              )}
+
+              {/* ── Search results ── */}
               {results.length > 0 ? (
                 results.map(food => (
                   <TouchableOpacity key={food.id} style={s.foodRow} onPress={() => selectFood(food)} activeOpacity={0.8}>
@@ -376,7 +470,7 @@ export function FoodSearchModal({ visible, mealType, onClose, onAdd }: Props) {
                 </TouchableOpacity>
               )}
 
-              {!query.trim() && (
+              {!query.trim() && recentFoods.length === 0 && (
                 <View style={s.emptyStart}>
                   <Text style={s.emptyStartText}>Type to search foods</Text>
                   <TouchableOpacity style={[s.createBtn, { marginTop: 16 }]} onPress={() => setView('create')} activeOpacity={0.8}>
@@ -406,6 +500,16 @@ const s = StyleSheet.create({
   clearBtn:    { paddingHorizontal: 14 },
 
   list: { flex: 1, paddingHorizontal: Spacing.lg },
+
+  sectionLbl: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.t3, textTransform: 'uppercase', marginBottom: 8 },
+
+  recentRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.line },
+  recentClockWrap:{ width: 28, alignItems: 'center' },
+  lastUsed:       { fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3, marginRight: 4 },
+
+  dividerRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.line },
+  dividerText: { fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3, letterSpacing: 1 },
 
   foodRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: Colors.line },
   foodIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.s3, alignItems: 'center', justifyContent: 'center' },

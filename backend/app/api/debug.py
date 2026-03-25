@@ -37,6 +37,9 @@ class TimeTravelRequest(BaseModel):
     set_xp: Optional[int] = Field(None, ge=0, description="Set XP directly")
     set_coins: Optional[int] = Field(None, ge=0, description="Set coins directly")
     set_campaign_path: Optional[str] = Field(None, pattern="^[AB]$", description="Set campaign_path to A or B")
+    set_campaign_workouts: Optional[int] = Field(None, ge=0, description="Set workouts relative to campaign start (adjusts baseline)")
+    set_campaign_missions: Optional[int] = Field(None, ge=0, description="Set missions relative to campaign start (adjusts baseline)")
+    set_campaign_streak: Optional[int] = Field(None, ge=0, description="Set current_streak (alias for set_streak, for campaign testing)")
     clear_achievements: bool = Field(False, description="Remove all earned achievements for this user")
     check_achievements: bool = Field(True, description="Re-check achievement conditions after applying changes")
     advance_chapter: bool = Field(False, description="Try to advance campaign chapter after applying changes")
@@ -115,10 +118,12 @@ def time_travel(
         progress.coins                   = 0
         progress.current_streak          = 0
         progress.longest_streak          = 0
-        progress.total_workouts          = 0
+        progress.total_workouts           = 0
         progress.missions_completed_count = 0
-        progress.campaign_path           = None
-        progress.last_workout_at         = None
+        progress.campaign_started_workouts = 0
+        progress.campaign_started_missions = 0
+        progress.campaign_path            = None
+        progress.last_workout_at          = None
 
         # Reset to chapter 1 of the first campaign
         first_campaign = (
@@ -162,6 +167,17 @@ def time_travel(
 
     if body.set_missions_completed is not None:
         progress.missions_completed_count = body.set_missions_completed
+
+    # These set the RELATIVE progress within the campaign by adjusting the baseline snapshot
+    if body.set_campaign_workouts is not None:
+        progress.campaign_started_workouts = (progress.total_workouts or 0) - body.set_campaign_workouts
+
+    if body.set_campaign_missions is not None:
+        progress.campaign_started_missions = (progress.missions_completed_count or 0) - body.set_campaign_missions
+
+    if body.set_campaign_streak is not None:
+        progress.current_streak = body.set_campaign_streak
+        progress.longest_streak = max(progress.longest_streak or 0, body.set_campaign_streak)
 
     if body.set_level is not None:
         progress.level = body.set_level
