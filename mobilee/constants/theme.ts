@@ -35,6 +35,11 @@ export const Colors = {
     flat:  '#A89060',              // plateau
     dn:    '#C8343A',              // declining (same as accent)
     dnLo:  'rgba(200,52,58,0.09)',
+
+    // ── Macro bars ────────────────────────────────────────────────
+    macroProtein: '#C8343A',       // same as cr — protein bar
+    macroCarbs:   '#A89060',       // amber/flat — carbs bar
+    macroFat:     '#4A7FC1',       // frost blue — fat bar
   } as const;
   
   export const Fonts = {

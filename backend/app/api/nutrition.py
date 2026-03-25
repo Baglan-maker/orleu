@@ -15,16 +15,20 @@ from app.schemas.nutrition import (
     DailyTotalsOut,
     FoodItemCreate,
     FoodItemOut,
-    MacroTotals,
+    MealSummaryOut,
     NutritionGoalsOut,
     NutritionGoalsPatch,
     NutritionLogCreate,
     NutritionLogOut,
+    GOALS_FIELD_MAP,
     MEAL_TYPES,
 )
 from app.services.dependencies import get_current_user
 
 router = APIRouter()
+
+# Ordered list of meal keys used to guarantee consistent output
+_MEAL_KEYS = ("breakfast", "lunch", "dinner", "snacks")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -39,12 +43,28 @@ def _get_or_create_goals(user_id: UUID, db: Session) -> UserNutritionGoals:
     return goals
 
 
+def _food_to_out(food: FoodItem) -> FoodItemOut:
+    """Build FoodItemOut from an ORM FoodItem, mapping column names explicitly."""
+    return FoodItemOut(
+        id=food.id,
+        name=food.name,
+        brand=food.brand,
+        calories_per_100g=food.calories_per100g,
+        protein_per_100g=food.protein_per100g,
+        carbs_per_100g=food.carbs_per100g,
+        fat_per_100g=food.fat_per100g,
+        is_custom=food.is_custom,
+    )
+
+
 def _log_to_out(log: NutritionLog) -> NutritionLogOut:
+    """Build NutritionLogOut with the nested food_item object."""
     return NutritionLogOut(
         id=log.id,
-        food_name=log.food_item.name,
+        food_item=_food_to_out(log.food_item),
         meal_type=log.meal_type,
         quantity_g=log.quantity_g,
+        date=log.date,
         calories=log.calories,
         protein_g=log.protein_g,
         carbs_g=log.carbs_g,
@@ -62,22 +82,18 @@ def search_foods(
     current_user: User = Depends(get_current_user),
 ):
     pattern = f"%{q.lower()}%"
-    return (
+    items = (
         db.query(FoodItem)
-        .filter(
-            func.lower(FoodItem.name).like(pattern),
-        )
+        .filter(func.lower(FoodItem.name).like(pattern))
         .filter(
             (FoodItem.is_custom == False) |
             (FoodItem.created_by == current_user.id)
         )
-        .order_by(
-            FoodItem.is_custom.asc(),   # system foods first (False < True)
-            FoodItem.name.asc(),
-        )
+        .order_by(FoodItem.is_custom.asc(), FoodItem.name.asc())
         .limit(limit)
         .all()
     )
+    return [_food_to_out(item) for item in items]
 
 
 @router.post("/foods", response_model=FoodItemOut, status_code=201)
@@ -100,17 +116,17 @@ def create_custom_food(
     item = FoodItem(
         name=payload.name,
         brand=payload.brand,
-        calories_per100g=payload.calories_per100g,
-        protein_per100g=payload.protein_per100g,
-        carbs_per100g=payload.carbs_per100g,
-        fat_per100g=payload.fat_per100g,
+        calories_per100g=payload.calories_per_100g,
+        protein_per100g=payload.protein_per_100g,
+        carbs_per100g=payload.carbs_per_100g,
+        fat_per100g=payload.fat_per_100g,
         is_custom=True,
         created_by=current_user.id,
     )
     db.add(item)
     db.commit()
     db.refresh(item)
-    return item
+    return _food_to_out(item)
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -178,33 +194,39 @@ def get_daily(
         .all()
     )
 
-    meals: dict = defaultdict(list)
-    totals = MacroTotals(calories=0, protein_g=0, carbs_g=0, fat_g=0)
+    # Accumulate per-meal entries and day totals
+    meal_entries: dict  = defaultdict(list)
+    meal_calories: dict = defaultdict(float)
+    total_calories  = 0.0
+    total_protein_g = 0.0
+    total_carbs_g   = 0.0
+    total_fat_g     = 0.0
 
     for log in logs:
-        meals[log.meal_type].append(_log_to_out(log))
-        totals.calories  += log.calories
-        totals.protein_g += log.protein_g
-        totals.carbs_g   += log.carbs_g
-        totals.fat_g     += log.fat_g
+        entry = _log_to_out(log)
+        meal_entries[log.meal_type].append(entry)
+        meal_calories[log.meal_type] += log.calories
+        total_calories  += log.calories
+        total_protein_g += log.protein_g
+        total_carbs_g   += log.carbs_g
+        total_fat_g     += log.fat_g
 
-    totals.calories  = round(totals.calories,  2)
-    totals.protein_g = round(totals.protein_g, 2)
-    totals.carbs_g   = round(totals.carbs_g,   2)
-    totals.fat_g     = round(totals.fat_g,     2)
-
-    goals = _get_or_create_goals(current_user.id, db)
-
-    # Ensure all meal keys present
-    for meal in ("breakfast", "lunch", "dinner", "snack"):
-        if meal not in meals:
-            meals[meal] = []
+    # Guarantee all four meal keys are present
+    meals = {
+        meal: MealSummaryOut(
+            calories=round(meal_calories[meal], 2),
+            entries=meal_entries[meal],
+        )
+        for meal in _MEAL_KEYS
+    }
 
     return DailyNutritionOut(
         date=date,
-        goals=NutritionGoalsOut.model_validate(goals),
-        totals=totals,
-        meals=dict(meals),
+        calories=round(total_calories,  2),
+        protein_g=round(total_protein_g, 2),
+        carbs_g=round(total_carbs_g,   2),
+        fat_g=round(total_fat_g,     2),
+        meals=meals,
     )
 
 
@@ -228,7 +250,6 @@ def get_weekly(
         .all()
     )
 
-    # Aggregate by date
     by_date: dict = {}
     current = from_date
     while current <= to_date:
@@ -272,8 +293,10 @@ def patch_goals(
 ):
     goals = _get_or_create_goals(current_user.id, db)
 
+    # Map frontend field names (calories, protein_g, …) → DB column names
     for field, value in payload.model_dump(exclude_none=True).items():
-        setattr(goals, field, value)
+        db_column = GOALS_FIELD_MAP[field]
+        setattr(goals, db_column, value)
 
     db.commit()
     db.refresh(goals)

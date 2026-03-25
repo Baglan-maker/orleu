@@ -1,0 +1,178 @@
+// mobile/store/nutritionStore.ts
+import { create } from 'zustand';
+import { api } from '../services/api';
+import {
+  saveNutritionLogPending,
+  getPendingNutritionLogs,
+  markNutritionLogSynced,
+} from '../services/database';
+
+// ─── Types ────────────────────────────────────────────────────────
+export interface FoodItem {
+  id:               string;
+  name:             string;
+  brand:            string | null;
+  calories_per_100g: number;
+  protein_per_100g:  number;
+  carbs_per_100g:    number;
+  fat_per_100g:      number;
+  is_custom:         boolean;
+}
+
+export interface NutritionLogEntry {
+  id:         string;
+  food_item:  FoodItem;
+  quantity_g: number;
+  meal_type:  MealType;
+  date:       string;
+  calories:   number;
+  protein_g:  number;
+  carbs_g:    number;
+  fat_g:      number;
+}
+
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
+
+export interface MealSummary {
+  calories: number;
+  entries:  NutritionLogEntry[];
+}
+
+export interface NutritionDayResponse {
+  date:      string;
+  calories:  number;
+  protein_g: number;
+  carbs_g:   number;
+  fat_g:     number;
+  meals: {
+    breakfast: MealSummary;
+    lunch:     MealSummary;
+    dinner:    MealSummary;
+    snacks:    MealSummary;
+  };
+}
+
+export interface NutritionGoals {
+  calories:  number;
+  protein_g: number;
+  carbs_g:   number;
+  fat_g:     number;
+}
+
+interface NutritionState {
+  todayData:    NutritionDayResponse | null;
+  goals:        NutritionGoals | null;
+  selectedDate: string;
+  isLoading:    boolean;
+  error:        string | null;
+
+  loadDay:     (date: string) => Promise<void>;
+  logFood:     (date: string, mealType: MealType, foodItemId: string, quantityG: number) => Promise<void>;
+  removeLog:   (logId: string) => Promise<void>;
+  loadGoals:   () => Promise<void>;
+  updateGoals: (goals: NutritionGoals) => Promise<void>;
+  setDate:     (date: string) => void;
+  syncPending: () => Promise<void>;
+}
+
+/** Returns today as YYYY-MM-DD in **local** time (not UTC). */
+export function localDateISO(d: Date = new Date()): string {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// ─── Store ───────────────────────────────────────────────────────
+export const useNutritionStore = create<NutritionState>((set, get) => ({
+  todayData:    null,
+  goals:        null,
+  selectedDate: localDateISO(),
+  isLoading:    false,
+  error:        null,
+
+  loadDay: async (date) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { data } = await api.get<NutritionDayResponse>('/api/nutrition/daily', { params: { date } });
+      set({ todayData: data, isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.response?.data?.detail ?? 'Failed to load nutrition data' });
+    }
+  },
+
+  logFood: async (date, mealType, foodItemId, quantityG) => {
+    try {
+      await api.post('/api/nutrition/log', {
+        food_item_id: foodItemId,
+        quantity_g:   quantityG,
+        meal_type:    mealType,
+        date,
+      });
+      await get().loadDay(date);
+    } catch {
+      // Offline: save to SQLite for later sync
+      const pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await saveNutritionLogPending({
+        id:           pendingId,
+        food_item_id: foodItemId,
+        quantity_g:   quantityG,
+        meal_type:    mealType,
+        date,
+      }).catch(() => {});
+    }
+  },
+
+  removeLog: async (logId) => {
+    try {
+      await api.delete(`/api/nutrition/log/${logId}`);
+      const { selectedDate } = get();
+      await get().loadDay(selectedDate);
+    } catch (err: any) {
+      set({ error: err?.response?.data?.detail ?? 'Failed to remove entry' });
+    }
+  },
+
+  loadGoals: async () => {
+    try {
+      const { data } = await api.get<NutritionGoals>('/api/nutrition/goals');
+      set({ goals: data });
+    } catch {}
+  },
+
+  updateGoals: async (goals) => {
+    try {
+      const { data } = await api.patch<NutritionGoals>('/api/nutrition/goals', goals);
+      set({ goals: data });
+    } catch (err: any) {
+      set({ error: err?.response?.data?.detail ?? 'Failed to update goals' });
+      throw err;
+    }
+  },
+
+  setDate: (date) => {
+    set({ selectedDate: date, todayData: null });
+    get().loadDay(date);
+  },
+
+  syncPending: async () => {
+    try {
+      const pending = await getPendingNutritionLogs();
+      for (const log of pending) {
+        try {
+          await api.post('/api/nutrition/log', {
+            food_item_id: log.food_item_id,
+            quantity_g:   log.quantity_g,
+            meal_type:    log.meal_type,
+            date:         log.date,
+          });
+          await markNutritionLogSynced(log.id);
+        } catch {}
+      }
+      if (pending.length > 0) {
+        const { selectedDate } = get();
+        await get().loadDay(selectedDate);
+      }
+    } catch {}
+  },
+}));

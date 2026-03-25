@@ -22,6 +22,7 @@ function ILogout()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fil
 function IBell()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><Path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>; }
 function IShield()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></Svg>; }
 function IInfo()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Circle cx="12" cy="12" r="10"/><Line x1="12" y1="8" x2="12" y2="12"/><Line x1="12" y1="16" x2="12.01" y2="16"/></Svg>; }
+function ILeaf()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2C7 2 3 6 3 11c0 4 2.5 7.5 6 9.5C10.5 22 12 22 12 22s1.5 0 3-1.5C18.5 18.5 21 15 21 11c0-5-4-9-9-9z"/><Path d="M12 2 Q12 12 8 18"/></Svg>; }
 
 const GOAL_LABEL: Record<string, string> = {
   strength:     'Strength',
@@ -123,6 +124,18 @@ export default function ProfileScreen() {
               <Text style={s.infoLabel}>Level</Text>
               <Text style={s.infoValue}>{LEVEL_LABEL[user?.experience_level ?? 'beginner']}</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Nutrition */}
+        <View style={s.section}>
+          <Text style={s.sectionLbl}>NUTRITION</Text>
+          <View style={s.card}>
+            <SettingRow
+              icon={<ILeaf/>}
+              label="Nutrition Goals"
+              onPress={() => router.push('/nutrition-goals')}
+            />
           </View>
         </View>
 

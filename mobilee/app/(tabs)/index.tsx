@@ -26,7 +26,7 @@ import {
   selectTotalVolume,
 } from '../../store/workoutStore';
 import { useAuthStore } from '../../store/authStore';
-import { progressApi } from '../../services/gamificationApi';
+import { progressApi, missionApi, type UserMissionResponse } from '../../services/gamificationApi';
 // ─── Icons ────────────────────────────────────────────────────────
 function IPlus()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={2} strokeLinecap="round"><Line x1="12" y1="5" x2="12" y2="19"/><Line x1="5" y1="12" x2="19" y2="12"/></Svg>; }
 function IFire()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>; }
@@ -73,18 +73,24 @@ export default function WorkoutScreen() {
   const [isCelebrating, setIsCelebrating] = useState(false);
 
   // Progress state — fetched from server on focus
-  const [totalWorkouts, setTotalWorkouts] = useState(0);
-  const [streak,        setStreak]        = useState(0);
+  const [totalWorkouts,   setTotalWorkouts]   = useState(0);
+  const [streak,          setStreak]          = useState(0);
+  const [activeMissions,  setActiveMissions]  = useState<UserMissionResponse[]>([]);
+  const [completedMission, setCompletedMission] = useState<UserMissionResponse | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         try {
-          const { data } = await progressApi.get();
+          const [progressRes, missionsRes] = await Promise.all([
+            progressApi.get(),
+            missionApi.getAll(),
+          ]);
           if (!cancelled) {
-            setTotalWorkouts(data.total_sessions ?? 0);
-            setStreak(data.current_streak ?? 0);
+            setTotalWorkouts(progressRes.data.total_sessions ?? 0);
+            setStreak(progressRes.data.current_streak ?? 0);
+            setActiveMissions(missionsRes.data.active);
           }
         } catch {}
       })();
@@ -113,10 +119,55 @@ export default function WorkoutScreen() {
   const [newAchievements,      setNewAchievements]      = useState<AchievementEarned[]>([]);
   const [pendingAchievements,  setPendingAchievements]  = useState<AchievementEarned[]>([]);
 
-  const totalReps   = selectTotalReps(exercises);
-  const totalVolume = selectTotalVolume(exercises);
-  const missionPct  = Math.min(100, Math.round(totalReps / 350 * 100));
+  const totalReps    = selectTotalReps(exercises);
+  const totalVolume  = selectTotalVolume(exercises);
   const hasExercises = exercises.length > 0;
+
+  // ── Mission display helpers ────────────────────────────────────
+  const firstMission = activeMissions[0] ?? null;
+
+  function sessionContrib(mission: UserMissionResponse): number {
+    if (!hasExercises) return 0;
+    switch (mission.type) {
+      case 'workout_count':    return 1;
+      case 'total_reps':       return totalReps;
+      case 'total_volume':     return totalVolume;
+      case 'unique_exercises': return new Set(exercises.map(e => e.exerciseId)).size;
+      case 'muscle_sets':      return exercises.reduce((a, e) => a + e.sets, 0);
+      default:                 return 0;
+    }
+  }
+
+  function missionProgressLabel(mission: UserMissionResponse, progress: number): string {
+    const v = Math.round(progress);
+    const t = Math.round(mission.adjusted_target);
+    switch (mission.type) {
+      case 'total_reps':       return `${v} / ${t} reps`;
+      case 'total_volume':     return `${v} / ${t} kg`;
+      case 'workout_count':    return `${v} / ${t} workouts`;
+      case 'unique_exercises': return `${v} / ${t} exercises`;
+      case 'muscle_sets':      return `${v} / ${t} sets`;
+      default:                 return `${v} / ${t}`;
+    }
+  }
+
+  function missionTypeLabel(type: string): string {
+    switch (type) {
+      case 'total_reps':       return 'REPS';
+      case 'total_volume':     return 'VOLUME';
+      case 'workout_count':    return 'SESSIONS';
+      case 'unique_exercises': return 'VARIETY';
+      case 'muscle_sets':      return 'SETS';
+      default:                 return 'MISSION';
+    }
+  }
+
+  const missionLiveProgress = firstMission
+    ? Math.min(firstMission.adjusted_target, firstMission.current_progress + sessionContrib(firstMission))
+    : 0;
+  const missionPct = firstMission
+    ? Math.min(100, Math.round(missionLiveProgress / firstMission.adjusted_target * 100))
+    : 0;
 
   function onExerciseAdd(data: SetData) {
     addExercise({
@@ -132,6 +183,7 @@ export default function WorkoutScreen() {
   async function finishWorkout() {
     if (!hasExercises) return;
     const prevStage = stage;
+    const missionsBefore = activeMissions;
     const result = await submitWorkout();
     if (result) {
       setIsCelebrating(true);
@@ -141,7 +193,6 @@ export default function WorkoutScreen() {
       const earned = result.achievements ?? [];
       if (earned.length > 0) {
         if (result.leveled_up) {
-          // Queue achievements to show after level-up modal closes
           setPendingAchievements(earned);
         } else {
           setNewAchievements(earned);
@@ -154,16 +205,29 @@ export default function WorkoutScreen() {
         setNewLevel(result.new_level);
         setLevelUpVisible(true);
       }
-      // Refresh progress so avatar stage and streak update immediately
+
+      // Refresh progress + missions together
       try {
-        const { data } = await progressApi.get();
-        const sessions = data.total_sessions ?? 0;
+        const [progressRes, missionsRes] = await Promise.all([
+          progressApi.get(),
+          missionApi.getAll(),
+        ]);
+        const sessions = progressRes.data.total_sessions ?? 0;
         setTotalWorkouts(sessions);
-        setStreak(data.current_streak ?? 0);
+        setStreak(progressRes.data.current_streak ?? 0);
         const next = getAvatarStage(sessions);
         if (next > prevStage) {
           setNewStage(next);
           setStageUpVisible(true);
+        }
+
+        // Detect missions that were active before but are no longer active = just completed
+        const afterActiveIds = new Set(missionsRes.data.active.map(m => m.id));
+        const justCompleted = missionsBefore.filter(m => !afterActiveIds.has(m.id));
+        setActiveMissions(missionsRes.data.active);
+        if (justCompleted.length > 0) {
+          setCompletedMission(justCompleted[0]);
+          setMissionVisible(true);
         }
       } catch {}
     }
@@ -224,21 +288,35 @@ export default function WorkoutScreen() {
 
         {/* ── Active mission ── */}
         <Card variant="crimson">
-          <View style={s.mHead}>
-            <View>
-              <Text style={s.lblCr}>Active mission</Text>
-              <Text style={s.mName}>Volume Crusher</Text>
+          {firstMission ? (
+            <>
+              <View style={s.mHead}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={s.lblCr}>Active mission</Text>
+                  <Text style={s.mName} numberOfLines={1}>{firstMission.name}</Text>
+                </View>
+                <View style={s.badge}>
+                  <Text style={s.badgeText}>{missionTypeLabel(firstMission.type)}</Text>
+                </View>
+              </View>
+              <ProgressBar
+                value={missionPct}
+                color={Colors.cr}
+                height={4}
+                leftText={missionProgressLabel(firstMission, missionLiveProgress)}
+                rightText={`${missionPct}%`}
+                style={{ marginTop: 8 }}
+              />
+            </>
+          ) : (
+            <View style={s.mHead}>
+              <View>
+                <Text style={s.lblCr}>Active mission</Text>
+                <Text style={s.mName}>No active mission</Text>
+              </View>
+              <Text style={s.mSub}>Pick one on Missions tab</Text>
             </View>
-            <View style={s.badge}><Text style={s.badgeText}>HARD</Text></View>
-          </View>
-          <ProgressBar
-            value={missionPct}
-            color={Colors.cr}
-            height={4}
-            leftText={`${Math.min(350, totalReps)} / 350 reps`}
-            rightText={`${missionPct}%`}
-            style={{ marginTop: 8 }}
-          />
+          )}
         </Card>
 
         {/* ── Exercise list ── */}
@@ -348,10 +426,10 @@ export default function WorkoutScreen() {
 
       <MissionCompleteModal
         visible={missionVisible}
-        missionName="Volume Crusher"
-        xpGained={150}
-        coinsGained={30}
-        onClose={() => setMissionVisible(false)}
+        missionName={completedMission?.name ?? ''}
+        xpGained={completedMission?.xp_reward ?? 0}
+        coinsGained={completedMission?.coins_reward ?? 0}
+        onClose={() => { setMissionVisible(false); setCompletedMission(null); }}
       />
 
       <StageUpModal
@@ -389,6 +467,7 @@ const s = StyleSheet.create({
   lblCr:  { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.cr, textTransform: 'uppercase', marginBottom: 3 },
   mHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   mName:  { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1 },
+  mSub:   { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, alignSelf: 'center' },
   badge:  { backgroundColor: Colors.crLo, borderWidth: 1, borderColor: Colors.crBdr, borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontFamily: Fonts.bold, color: Colors.cr, letterSpacing: 0.8 },
 

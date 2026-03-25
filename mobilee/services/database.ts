@@ -50,6 +50,16 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       key   TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS nutrition_logs_pending (
+      id           TEXT PRIMARY KEY,
+      food_item_id TEXT NOT NULL,
+      quantity_g   REAL NOT NULL,
+      meal_type    TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      synced       INTEGER NOT NULL DEFAULT 0,
+      created_at   TEXT NOT NULL
+    );
   `);
 
   return _db;
@@ -207,6 +217,37 @@ async function setMeta(key: string, value: string): Promise<void> {
     'INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)',
     [key, value]
   );
+}
+
+// ─── Nutrition pending logs ────────────────────────────────────────
+export interface PendingNutritionLog {
+  id:           string;
+  food_item_id: string;
+  quantity_g:   number;
+  meal_type:    string;
+  date:         string;
+}
+
+export async function saveNutritionLogPending(log: PendingNutritionLog): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO nutrition_logs_pending
+       (id, food_item_id, quantity_g, meal_type, date, synced, created_at)
+     VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
+    [log.id, log.food_item_id, log.quantity_g, log.meal_type, log.date]
+  );
+}
+
+export async function getPendingNutritionLogs(): Promise<PendingNutritionLog[]> {
+  const db = await getDb();
+  return db.getAllAsync<PendingNutritionLog>(
+    'SELECT id, food_item_id, quantity_g, meal_type, date FROM nutrition_logs_pending WHERE synced = 0 ORDER BY created_at ASC'
+  );
+}
+
+export async function markNutritionLogSynced(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE nutrition_logs_pending SET synced = 1 WHERE id = ?', [id]);
 }
 
 export { getDb };
