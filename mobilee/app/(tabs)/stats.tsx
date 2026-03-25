@@ -1,7 +1,8 @@
 // mobile/app/(tabs)/stats.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, ActivityIndicator, ScrollView, StyleSheet, Text, View,
+  Animated, ActivityIndicator, ScrollView, StyleSheet, Text,
+  TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -13,12 +14,22 @@ import { MomentumRing } from '../../components/avatar/MomentumRing';
 import { Card }        from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useAuthStore } from '../../store/authStore';
+import { useAchievementStore } from '../../store/achievementStore';
 import { progressApi, type ProgressResponse } from '../../services/gamificationApi';
 import { workoutApi, type WorkoutListItem } from '../../services/workoutApi';
 import { AchievementIcon } from '../../components/achievement/AchievementIcon';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IUp() { return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
+function IChevron({ rotated }: { rotated: boolean }) {
+  return (
+    <Animated.View style={{ transform: [{ rotate: rotated ? '180deg' : '0deg' }] }}>
+      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <Polyline points="6 9 12 15 18 9"/>
+      </Svg>
+    </Animated.View>
+  );
+}
 
 const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
 const STAGE_THRESH = [0, 6, 16, 31, 51];
@@ -94,6 +105,11 @@ export default function StatsScreen() {
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutListItem[]>([]);
   const [loading,        setLoading]        = useState(true);
 
+  // Achievements
+  const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
+  const [achExpanded, setAchExpanded] = useState(false);
+  const achHeight = useRef(new Animated.Value(0)).current;
+
   // Volume chart animation
   const barAnims = useRef(Array.from({ length: 5 }, () => new Animated.Value(0))).current;
 
@@ -111,6 +127,7 @@ export default function StatsScreen() {
           setTotalWorkouts(progRes.data.total_sessions ?? 0);
           const hist = (histRes.data as any).items ?? [];
           setWorkoutHistory(hist);
+          fetchAchievements();
         } catch {
           // fallback — keep defaults
         } finally {
@@ -156,8 +173,30 @@ export default function StatsScreen() {
     : 100;
   const score = Math.round(totalWorkouts * 12 + stage * 80 + xp * 0.1);
 
-  const achievements = progress?.achievements ?? [];
-  const earnedCount  = achievements.filter(a => a.earned).length;
+  const achList     = storeAchievements.length > 0 ? storeAchievements : (progress?.achievements ?? []);
+  const earnedAch   = achList.filter(a => a.earned);
+  const earnedCount = earnedAch.length;
+
+  function toggleAchExpanded() {
+    const toExpanded = !achExpanded;
+    setAchExpanded(toExpanded);
+    Animated.spring(achHeight, {
+      toValue: toExpanded ? 1 : 0,
+      tension: 60,
+      friction: 10,
+      useNativeDriver: false,
+    }).start();
+  }
+
+  // Collapsed row height: icon (44) + label space (18) + margin = ~68
+  // Grid: ceil(total/3) rows * 68
+  const gridRows    = Math.ceil(achList.length / 3);
+  const expandedH   = gridRows * 68;
+  const collapsedH  = earnedCount > 0 ? 68 : 0;
+  const animatedH   = achHeight.interpolate({
+    inputRange: [0, 1],
+    outputRange: [collapsedH, expandedH],
+  });
 
   if (loading) {
     return (
@@ -286,36 +325,59 @@ export default function StatsScreen() {
           </View>
         </Card>
 
-        {/* ── Achievements ── */}
+        {/* ── Achievements (collapsible) ── */}
         <Card>
-          <View style={s.achHeader}>
-            <Text style={s.chartTitle}>Achievements</Text>
-            {achievements.length > 0 && (
-              <View style={s.achCountChip}>
-                <Text style={s.achCountText}>{earnedCount} / {achievements.length} unlocked</Text>
+          <TouchableOpacity style={s.achHeader} onPress={toggleAchExpanded} activeOpacity={0.7}>
+            <View style={s.achHeaderLeft}>
+              <Text style={s.chartTitle}>Achievements</Text>
+              {achList.length > 0 && (
+                <Text style={s.achCountBadge}>{earnedCount} / {achList.length}</Text>
+              )}
+            </View>
+            <IChevron rotated={achExpanded} />
+          </TouchableOpacity>
+
+          <Animated.View style={{ height: animatedH, overflow: 'hidden' }}>
+            {!achExpanded ? (
+              /* Collapsed: horizontal row of earned icons */
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.achScrollRow}>
+                {earnedAch.slice(0, 5).map(a => (
+                  <View key={a.id} style={s.achItemH}>
+                    <View style={[s.achBox, { backgroundColor: Colors.crLo, borderColor: Colors.crBdr }]}>
+                      <AchievementIcon iconKey={a.icon_key} color={Colors.cr} size={20} />
+                    </View>
+                    <Text style={s.achLabel} numberOfLines={1}>{a.name}</Text>
+                  </View>
+                ))}
+                {earnedCount > 5 && (
+                  <View style={s.achMoreWrap}>
+                    <Text style={s.achMoreText}>+{earnedCount - 5} more</Text>
+                  </View>
+                )}
+              </ScrollView>
+            ) : (
+              /* Expanded: 3-column grid of all achievements */
+              <View style={s.achGrid}>
+                {achList.map(a => (
+                  <View key={a.id} style={[s.achItem, !a.earned && { opacity: 0.4 }]}>
+                    <View style={[
+                      s.achBox,
+                      a.earned
+                        ? { backgroundColor: Colors.crLo, borderColor: Colors.crBdr }
+                        : { backgroundColor: Colors.s3,   borderColor: Colors.line  },
+                    ]}>
+                      <AchievementIcon
+                        iconKey={a.icon_key}
+                        color={a.earned ? Colors.cr : Colors.t3}
+                        size={20}
+                      />
+                    </View>
+                    <Text style={s.achLabel} numberOfLines={2}>{a.name}</Text>
+                  </View>
+                ))}
               </View>
             )}
-          </View>
-
-          <View style={s.achGrid}>
-            {achievements.map(a => (
-              <View key={a.id} style={[s.achItem, !a.earned && { opacity: 0.4 }]}>
-                <View style={[
-                  s.achBox,
-                  a.earned
-                    ? { backgroundColor: Colors.crLo, borderColor: Colors.crBdr }
-                    : { backgroundColor: Colors.s3,   borderColor: Colors.line  },
-                ]}>
-                  <AchievementIcon
-                    iconKey={a.icon_key}
-                    color={a.earned ? Colors.cr : Colors.t3}
-                    size={20}
-                  />
-                </View>
-                <Text style={s.achLabel} numberOfLines={2}>{a.name}</Text>
-              </View>
-            ))}
-          </View>
+          </Animated.View>
         </Card>
 
       </ScrollView>
@@ -373,11 +435,15 @@ const s = StyleSheet.create({
   weekLabel:  { flex: 1, textAlign: 'center', fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3 },
 
   // ── Achievements ────────────────────────────────────────────────
-  achHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  achCountChip: { backgroundColor: Colors.s3, borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Colors.line },
-  achCountText: { fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3 },
-  achGrid:      { flexDirection: 'row', flexWrap: 'wrap' },
-  achItem:      { width: '20%', alignItems: 'center', gap: 6, marginBottom: 12 },
-  achBox:       { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  achLabel:     { fontSize: 9, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', width: 56, lineHeight: 13 },
+  achHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  achHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  achCountBadge: { fontSize: 12, fontFamily: Fonts.monoBold, color: Colors.cr },
+  achScrollRow:  { flexDirection: 'row' },
+  achItemH:      { alignItems: 'center', gap: 6, marginRight: 12, width: 56 },
+  achMoreWrap:   { justifyContent: 'center', paddingHorizontal: 8 },
+  achMoreText:   { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  achGrid:       { flexDirection: 'row', flexWrap: 'wrap' },
+  achItem:       { width: '33.33%', alignItems: 'center', gap: 6, marginBottom: 12 },
+  achBox:        { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  achLabel:      { fontSize: 9, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', width: 56, lineHeight: 13 },
 });

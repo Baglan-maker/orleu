@@ -27,7 +27,7 @@ ACHIEVEMENTS = [
 def seed():
     db = SessionLocal()
     try:
-        existing = {a.name for a in db.query(Achievement.name).all()}
+        existing = {a.name for a in db.query(Achievement).all()}
         added = 0
         for data in ACHIEVEMENTS:
             if data["name"] not in existing:

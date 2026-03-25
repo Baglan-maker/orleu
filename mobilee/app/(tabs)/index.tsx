@@ -18,6 +18,7 @@ import { ExerciseSearchModal, SetData } from '../../components/workout/ExerciseS
 import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
 import { StageUpModal }          from '../../components/modals/StageUpModal';
+import { AchievementModal, type AchievementEarned } from '../../components/modals/AchievementModal';
 import { SyncStatusIndicator }   from '../../components/SyncStatusIndicator';
 import {
   useWorkoutStore,
@@ -102,12 +103,15 @@ export default function WorkoutScreen() {
   const themeColor   = avatarTheme.color;
 
   // Modals
-  const [levelUpVisible,  setLevelUpVisible]  = useState(false);
-  const [newLevel,        setNewLevel]        = useState(1);
-  const [xpGained,        setXpGained]        = useState(0);
-  const [missionVisible,  setMissionVisible]  = useState(false);
-  const [stageUpVisible,  setStageUpVisible]  = useState(false);
-  const [newStage,        setNewStage]        = useState<typeof stage>(0);
+  const [levelUpVisible,       setLevelUpVisible]       = useState(false);
+  const [newLevel,             setNewLevel]             = useState(1);
+  const [xpGained,             setXpGained]             = useState(0);
+  const [missionVisible,       setMissionVisible]       = useState(false);
+  const [stageUpVisible,       setStageUpVisible]       = useState(false);
+  const [newStage,             setNewStage]             = useState<typeof stage>(0);
+  const [achModalVisible,      setAchModalVisible]      = useState(false);
+  const [newAchievements,      setNewAchievements]      = useState<AchievementEarned[]>([]);
+  const [pendingAchievements,  setPendingAchievements]  = useState<AchievementEarned[]>([]);
 
   const totalReps   = selectTotalReps(exercises);
   const totalVolume = selectTotalVolume(exercises);
@@ -132,6 +136,19 @@ export default function WorkoutScreen() {
     if (result) {
       setIsCelebrating(true);
       setTimeout(() => setIsCelebrating(false), 1000);
+
+      // Capture new achievements from response
+      const earned = result.achievements ?? [];
+      if (earned.length > 0) {
+        if (result.leveled_up) {
+          // Queue achievements to show after level-up modal closes
+          setPendingAchievements(earned);
+        } else {
+          setNewAchievements(earned);
+          setAchModalVisible(true);
+        }
+      }
+
       if (result.leveled_up && result.new_level != null) {
         setXpGained(result.xp_gained ?? 0);
         setNewLevel(result.new_level);
@@ -318,7 +335,15 @@ export default function WorkoutScreen() {
         visible={levelUpVisible}
         level={newLevel}
         xpGained={xpGained}
-        onClose={() => setLevelUpVisible(false)}
+        onClose={() => {
+          setLevelUpVisible(false);
+          // Show queued achievements after level-up modal closes
+          if (pendingAchievements.length > 0) {
+            setNewAchievements(pendingAchievements);
+            setPendingAchievements([]);
+            setTimeout(() => setAchModalVisible(true), 300);
+          }
+        }}
       />
 
       <MissionCompleteModal
@@ -334,6 +359,15 @@ export default function WorkoutScreen() {
         stage={newStage}
         themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
         onClose={() => setStageUpVisible(false)}
+      />
+
+      <AchievementModal
+        achievements={newAchievements}
+        visible={achModalVisible}
+        onClose={() => {
+          setAchModalVisible(false);
+          setNewAchievements([]);
+        }}
       />
     </SafeAreaView>
   );

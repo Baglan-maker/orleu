@@ -10,7 +10,50 @@ Entry points:
 from uuid import UUID
 from sqlalchemy.orm import Session
 
-from app.models import UserProgress, Campaign, CampaignChapter
+from app.models import (
+    UserProgress, Campaign, CampaignChapter,
+    Achievement, UserAchievement,
+)
+
+
+# ── Achievement checking ──────────────────────────────────────────────────────
+
+def check_and_award_achievements(user_id: UUID, db: Session) -> list[Achievement]:
+    """
+    Check all achievements not yet earned by user.
+    Award any whose condition is now met.
+    Return list of newly awarded Achievement objects.
+    """
+    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    if not progress:
+        return []
+
+    already_earned = {
+        ua.achievement_id
+        for ua in db.query(UserAchievement).filter(UserAchievement.user_id == user_id).all()
+    }
+
+    stats = {
+        "streak_days":        progress.current_streak,
+        "total_sessions":     progress.total_workouts or 0,
+        "missions_completed": progress.missions_completed_count or 0,
+    }
+
+    all_achievements = db.query(Achievement).all()
+    newly_awarded: list[Achievement] = []
+
+    for achievement in all_achievements:
+        if achievement.id in already_earned:
+            continue
+        user_value = stats.get(achievement.condition_type, 0)
+        if user_value >= achievement.condition_value:
+            db.add(UserAchievement(user_id=user_id, achievement_id=achievement.id))
+            newly_awarded.append(achievement)
+
+    if newly_awarded:
+        db.flush()
+
+    return newly_awarded
 
 
 # ── Chapter completion conditions ─────────────────────────────────────────────

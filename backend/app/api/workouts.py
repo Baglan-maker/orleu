@@ -1,19 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
-import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
     WorkoutListItem, WorkoutListResponse, AchievementEarned,
 )
 from app.services.dependencies import get_current_user
-from app.services.gamification_service import try_advance_chapter
+from app.services.gamification_service import try_advance_chapter, check_and_award_achievements
 
 router = APIRouter()
 
@@ -122,48 +121,6 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
                 progress.missions_completed_count = (progress.missions_completed_count or 0) + 1
 
 
-def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
-    """Check all achievements against user stats, award any newly earned ones."""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
-    if not progress:
-        return []
-
-    # Already earned achievement IDs
-    earned_ids = {
-        row.achievement_id
-        for row in db.query(UserAchievement.achievement_id)
-        .filter(UserAchievement.user_id == user_id)
-        .all()
-    }
-
-    # Precompute stats used by condition_type
-    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
-    missions_completed = (
-        db.query(UserMission)
-        .filter(UserMission.user_id == user_id, UserMission.status == "completed")
-        .count()
-    )
-
-    stats = {
-        "streak_days":        progress.current_streak,
-        "total_sessions":     total_sessions,
-        "missions_completed": missions_completed,
-        # pr_count requires comparing exercise weights — simplified: count workouts with new max
-        "pr_count":           0,  # TODO: implement PR tracking if needed
-    }
-
-    all_achievements = db.query(Achievement).all()
-    newly_earned: list[Achievement] = []
-
-    for ach in all_achievements:
-        if ach.id in earned_ids:
-            continue
-        user_value = stats.get(ach.condition_type, 0)
-        if user_value >= ach.condition_value:
-            db.add(UserAchievement(user_id=user_id, achievement_id=ach.id))
-            newly_earned.append(ach)
-
-    return newly_earned
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -278,9 +235,10 @@ def create_workout(
         .all()
     )
     reward = _award_xp_and_streak(db, current_user.id, workout_exercises)
+    db.flush()
 
     # Check achievements after all stats are updated
-    newly_earned = _check_achievements(db, current_user.id)
+    newly_earned = check_and_award_achievements(current_user.id, db)
 
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)

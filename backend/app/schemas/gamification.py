@@ -16,6 +16,19 @@ class AchievementOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AchievementFullOut(BaseModel):
+    id:              UUID
+    name:            str
+    description:     str
+    icon_key:        str
+    condition_type:  str
+    condition_value: int
+    earned:          bool
+    earned_at:       Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ─── Progress ────────────────────────────────────────────────────
 
 class ProgressOut(BaseModel):
