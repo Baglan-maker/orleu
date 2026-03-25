@@ -13,7 +13,7 @@ from app.db.database import get_db
 from app.config import settings
 from app.models import (
     User, Workout, ExerciseLibrary, UserProgress,
-    UserMission, UserAchievement, CampaignChapter,
+    UserMission, UserAchievement, CampaignChapter, Campaign,
 )
 from app.models.workout import WorkoutExercise
 from app.services.dependencies import get_current_user
@@ -41,6 +41,8 @@ class TimeTravelRequest(BaseModel):
     check_achievements: bool = Field(True, description="Re-check achievement conditions after applying changes")
     advance_chapter: bool = Field(False, description="Try to advance campaign chapter after applying changes")
     reset_campaign_progress: bool = Field(False, description="Reset campaign_path to None and current_chapter_id back to chapter 1")
+    clear_campaign_path: bool = Field(False, description="Clear campaign_path back to None without a full reset")
+    full_reset: bool = Field(False, description="Delete all workouts, missions, achievements and zero all progress counters")
 
 
 class TimeTravelResponse(BaseModel):
@@ -92,6 +94,65 @@ def time_travel(
     if not progress:
         raise HTTPException(status_code=404, detail="UserProgress not found")
 
+    # ── Full reset: wipe everything and start fresh ───────────────────────────
+    if body.full_reset:
+        # Delete all workout exercises + workouts
+        workout_ids = [
+            row.id for row in
+            db.query(Workout.id).filter(Workout.user_id == current_user.id).all()
+        ]
+        if workout_ids:
+            db.query(WorkoutExercise).filter(WorkoutExercise.workout_id.in_(workout_ids)).delete(synchronize_session=False)
+            db.query(Workout).filter(Workout.user_id == current_user.id).delete(synchronize_session=False)
+
+        # Delete missions and achievements
+        db.query(UserMission).filter(UserMission.user_id == current_user.id).delete(synchronize_session=False)
+        db.query(UserAchievement).filter(UserAchievement.user_id == current_user.id).delete(synchronize_session=False)
+
+        # Zero all progress fields
+        progress.xp                      = 0
+        progress.level                   = 1
+        progress.coins                   = 0
+        progress.current_streak          = 0
+        progress.longest_streak          = 0
+        progress.total_workouts          = 0
+        progress.missions_completed_count = 0
+        progress.campaign_path           = None
+        progress.last_workout_at         = None
+
+        # Reset to chapter 1 of the first campaign
+        first_campaign = (
+            db.query(Campaign)
+            .filter(Campaign.is_active == True)
+            .order_by(Campaign.order_index)
+            .first()
+        )
+        if first_campaign:
+            progress.current_campaign_id = first_campaign.id
+            first_chapter = (
+                db.query(CampaignChapter)
+                .filter(CampaignChapter.campaign_id == first_campaign.id)
+                .order_by(CampaignChapter.chapter_number)
+                .first()
+            )
+            progress.current_chapter_id = first_chapter.id if first_chapter else None
+
+        db.commit()
+        db.refresh(progress)
+        return TimeTravelResponse(
+            total_workouts=0,
+            current_streak=0,
+            missions_completed_count=0,
+            level=1,
+            xp=0,
+            coins=0,
+            campaign_path=None,
+            achievements_cleared=True,
+            new_achievements=[],
+            chapter_advanced=False,
+        )
+
+    # ── Individual field overrides ────────────────────────────────────────────
     if body.set_streak is not None:
         progress.current_streak = body.set_streak
         progress.longest_streak = max(progress.longest_streak, body.set_streak)
@@ -116,7 +177,6 @@ def time_travel(
 
     if body.reset_campaign_progress:
         progress.campaign_path = None
-        # Reset chapter pointer back to chapter 1 of the current campaign
         if progress.current_campaign_id is not None:
             first_chapter = (
                 db.query(CampaignChapter)
@@ -126,6 +186,9 @@ def time_travel(
             )
             if first_chapter:
                 progress.current_chapter_id = first_chapter.id
+
+    if body.clear_campaign_path:
+        progress.campaign_path = None
 
     achievements_cleared = False
     if body.clear_achievements:
@@ -141,7 +204,8 @@ def time_travel(
 
     chapter_advanced = False
     if body.advance_chapter:
-        chapter_advanced = try_advance_chapter(current_user.id, db)
+        result = try_advance_chapter(current_user.id, db)
+        chapter_advanced = result.get("advanced", False)
 
     db.commit()
     db.refresh(progress)
@@ -246,8 +310,8 @@ def seed_workout_history(
         awarded = check_and_award_achievements(current_user.id, db)
         new_achievements = [a.name for a in awarded]
 
-    # Try to advance campaign
-    try_advance_chapter(current_user.id, db)
+    # Try to advance campaign (return value intentionally unused here)
+    try_advance_chapter(current_user.id, db)  # noqa: F841
 
     db.commit()
     db.refresh(progress)

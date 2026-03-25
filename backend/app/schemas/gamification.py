@@ -32,21 +32,23 @@ class AchievementFullOut(BaseModel):
 # ─── Progress ────────────────────────────────────────────────────
 
 class ProgressOut(BaseModel):
-    user_id:             UUID
-    xp:                  int
-    level:               int
-    coins:               int
-    current_streak:      int
-    longest_streak:      int
-    current_campaign_id: Optional[UUID] = None
-    current_chapter_id:  Optional[UUID] = None
-    campaign_path:       Optional[str] = None
-    last_workout_at:     Optional[datetime] = None
-    updated_at:          Optional[datetime] = None
-    total_sessions:      int = 0
-    avatar_stage:        int = 0
-    avatar_stage_name:   str = "Rookie"
-    achievements:        List[AchievementOut] = []
+    user_id:                 UUID
+    xp:                      int
+    level:                   int
+    coins:                   int
+    current_streak:          int
+    longest_streak:          int
+    current_campaign_id:     Optional[UUID] = None
+    current_chapter_id:      Optional[UUID] = None
+    campaign_path:           Optional[str] = None
+    last_workout_at:         Optional[datetime] = None
+    updated_at:              Optional[datetime] = None
+    total_sessions:          int = 0
+    total_workouts:          int = 0
+    missions_completed_count: int = 0
+    avatar_stage:            int = 0
+    avatar_stage_name:       str = "Rookie"
+    achievements:            List[AchievementOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -79,6 +81,8 @@ class ChapterOut(BaseModel):
     has_branch:     bool
     branch_a_label: Optional[str] = None
     branch_b_label: Optional[str] = None
+    reward_xp:      int = 0
+    reward_coins:   int = 0
 
     model_config = {"from_attributes": True}
 
@@ -92,6 +96,8 @@ class ChapterWithStatusOut(BaseModel):
     narrative_text: Optional[str] = None
     branch_a_label: Optional[str] = None
     branch_b_label: Optional[str] = None
+    reward_xp:      int = 0
+    reward_coins:   int = 0
 
     model_config = {"from_attributes": True}
 

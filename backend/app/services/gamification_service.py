@@ -16,6 +16,21 @@ from app.models import (
 )
 
 
+# ── Reward tables ─────────────────────────────────────────────────────────────
+
+# XP and coins awarded when a chapter is COMPLETED (i.e. player advances past it)
+CHAPTER_REWARDS: dict[int, dict[str, int]] = {
+    1: {"xp": 75,  "coins": 30},
+    2: {"xp": 125, "coins": 50},
+    3: {"xp": 150, "coins": 60},
+    4: {"xp": 200, "coins": 80},
+    5: {"xp": 300, "coins": 120},
+}
+
+# Bonus on top of the final chapter reward when the whole campaign is finished
+CAMPAIGN_COMPLETION_BONUS: dict[str, int] = {"xp": 500, "coins": 200}
+
+
 # ── Achievement checking ──────────────────────────────────────────────────────
 
 def check_and_award_achievements(user_id: UUID, db: Session) -> list[Achievement]:
@@ -95,17 +110,28 @@ def check_chapter_completion(user_progress: UserProgress, chapter: CampaignChapt
 
 # ── Chapter advancement ────────────────────────────────────────────────────────
 
-def try_advance_chapter(user_id: UUID, db: Session) -> bool:
+def try_advance_chapter(user_id: UUID, db: Session) -> dict:
     """
     Tries to advance the user to the next chapter.
     - Advances AT MOST one chapter per call (idempotent).
     - Assigns the first campaign if the user has none.
+    - Awards XP and coins when a chapter is completed.
     - Commits any change made.
-    Returns True if an advancement (or initial assignment) was made.
+
+    Returns a dict:
+      {
+        "advanced":         bool,
+        "chapter_number":   int | None,   # completed chapter number
+        "campaign_complete": bool,
+        "xp":               int,
+        "coins":            int,
+      }
     """
+    _no_advance = {"advanced": False, "chapter_number": None, "campaign_complete": False, "xp": 0, "coins": 0}
+
     progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
     if not progress:
-        return False
+        return _no_advance
 
     # ── Step 1: No campaign yet — assign first and set chapter 1 ─────────────
     if progress.current_campaign_id is None:
@@ -116,7 +142,7 @@ def try_advance_chapter(user_id: UUID, db: Session) -> bool:
             .first()
         )
         if not first:
-            return False
+            return _no_advance
         chapters = (
             db.query(CampaignChapter)
             .filter(CampaignChapter.campaign_id == first.id)
@@ -124,11 +150,11 @@ def try_advance_chapter(user_id: UUID, db: Session) -> bool:
             .all()
         )
         if not chapters:
-            return False
+            return _no_advance
         progress.current_campaign_id = first.id
         progress.current_chapter_id  = chapters[0].id
         db.commit()
-        return True
+        return {"advanced": True, "chapter_number": None, "campaign_complete": False, "xp": 0, "coins": 0}
 
     # ── Step 2: Has campaign but no chapter — re-assign chapter 1 ────────────
     if progress.current_chapter_id is None:
@@ -141,22 +167,22 @@ def try_advance_chapter(user_id: UUID, db: Session) -> bool:
         if chapters:
             progress.current_chapter_id = chapters[0].id
             db.commit()
-        return False
+        return _no_advance
 
     # ── Step 3: Load current chapter ─────────────────────────────────────────
     current = db.query(CampaignChapter).filter(
         CampaignChapter.id == progress.current_chapter_id
     ).first()
     if not current:
-        return False
+        return _no_advance
 
     # ── Step 4: Branch gate — wait for explicit path selection ───────────────
     if current.has_branch and progress.campaign_path is None:
-        return False
+        return _no_advance
 
     # ── Step 5: Check completion conditions ──────────────────────────────────
     if not check_chapter_completion(progress, current):
-        return False
+        return _no_advance
 
     # ── Step 6: Find next chapter in same campaign ────────────────────────────
     next_chapter = (
@@ -168,10 +194,24 @@ def try_advance_chapter(user_id: UUID, db: Session) -> bool:
         .first()
     )
 
+    # Determine rewards for the completed chapter
+    completed_num = current.chapter_number
+    reward = CHAPTER_REWARDS.get(completed_num, {"xp": 0, "coins": 0})
+    xp_awarded    = reward["xp"]
+    coins_awarded = reward["coins"]
+    campaign_complete = False
+
     if next_chapter:
         progress.current_chapter_id = next_chapter.id
+        # Entering a branch chapter — clear stale path so user must choose again
+        if next_chapter.has_branch:
+            progress.campaign_path = None
     else:
         # ── Step 7: Campaign complete — move to next campaign ─────────────────
+        campaign_complete = True
+        xp_awarded    += CAMPAIGN_COMPLETION_BONUS["xp"]
+        coins_awarded += CAMPAIGN_COMPLETION_BONUS["coins"]
+
         current_order = (
             db.query(Campaign.order_index)
             .filter(Campaign.id == progress.current_campaign_id)
@@ -199,5 +239,15 @@ def try_advance_chapter(user_id: UUID, db: Session) -> bool:
             # All campaigns complete
             progress.current_chapter_id = None
 
+    # Award XP and coins for the completed chapter
+    progress.xp    = (progress.xp    or 0) + xp_awarded
+    progress.coins = (progress.coins or 0) + coins_awarded
+
     db.commit()
-    return True
+    return {
+        "advanced":          True,
+        "chapter_number":    completed_num,
+        "campaign_complete": campaign_complete,
+        "xp":                xp_awarded,
+        "coins":             coins_awarded,
+    }

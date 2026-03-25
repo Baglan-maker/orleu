@@ -11,21 +11,23 @@ export interface AchievementItem {
 }
 
 export interface ProgressResponse {
-  user_id:             string;
-  xp:                  number;
-  level:               number;
-  coins:               number;
-  current_streak:      number;
-  longest_streak:      number;
-  current_campaign_id: string | null;
-  current_chapter_id:  string | null;
-  campaign_path:       string | null;
-  last_workout_at:     string | null;
-  updated_at:          string | null;
-  total_sessions:      number;
-  avatar_stage:        number;
-  avatar_stage_name:   string;
-  achievements:        AchievementItem[];
+  user_id:                  string;
+  xp:                       number;
+  level:                    number;
+  coins:                    number;
+  current_streak:           number;
+  longest_streak:           number;
+  current_campaign_id:      string | null;
+  current_chapter_id:       string | null;
+  campaign_path:            string | null;
+  last_workout_at:          string | null;
+  updated_at:               string | null;
+  total_sessions:           number;
+  total_workouts:           number;
+  missions_completed_count: number;
+  avatar_stage:             number;
+  avatar_stage_name:        string;
+  achievements:             AchievementItem[];
 }
 
 export interface CampaignResponse {
@@ -46,6 +48,8 @@ export interface ChapterResponse {
   has_branch:     boolean;
   branch_a_label: string | null;
   branch_b_label: string | null;
+  reward_xp:      number;
+  reward_coins:   number;
 }
 
 export interface MissionTemplateResponse {

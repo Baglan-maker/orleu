@@ -185,6 +185,12 @@ export default function DebugScreen() {
     if (ok) chapterFb.setSuccess('Chapter advanced');
   }
 
+  // ─── Reset path ───────────────────────────────────────────────
+  async function handleResetPath() {
+    const ok = await timeTravelPost({ clear_campaign_path: true, advance_chapter: false }, campaignFb);
+    if (ok) campaignFb.setSuccess('Path cleared — choose again');
+  }
+
   // ─── Clear achievements ───────────────────────────────────────
   async function handleClearAchievements() {
     const ok = await timeTravelPost({ clear_achievements: true }, clearAchFb);
@@ -196,15 +202,8 @@ export default function DebugScreen() {
 
   // ─── Full reset ───────────────────────────────────────────────
   async function handleFullReset() {
-    const ok = await timeTravelPost({
-      set_total_workouts:      0,
-      set_streak:              0,
-      set_missions_completed:  0,
-      clear_achievements:      true,
-      check_achievements:      false,
-      reset_campaign_progress: true,   // resets campaign_path + chapter back to 1
-      advance_chapter:         true,   // re-evaluate chapter 1 conditions (stays at 1 since 0 workouts)
-    }, resetFb);
+    // full_reset=true deletes all workouts, missions, achievements and zeros all progress
+    const ok = await timeTravelPost({ full_reset: true }, resetFb);
     if (ok) {
       resetFb.setSuccess('Full reset complete');
       fetchAchievements();
@@ -281,6 +280,7 @@ export default function DebugScreen() {
         <View style={s.row}>
           <ActionButton label="Path A" onPress={() => handleSetPath('A')} loading={campaignFb.fb.status === 'loading'} flex={1} />
           <ActionButton label="Path B" onPress={() => handleSetPath('B')} loading={campaignFb.fb.status === 'loading'} flex={1} />
+          <ActionButton label="Reset Path" onPress={handleResetPath} loading={campaignFb.fb.status === 'loading'} flex={1} />
         </View>
         <FeedbackLabel fb={campaignFb.fb} />
         <View style={s.spacer} />

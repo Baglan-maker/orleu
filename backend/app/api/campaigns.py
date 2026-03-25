@@ -7,8 +7,15 @@ from app.db.database import get_db
 from app.models import User, Campaign, CampaignChapter, UserProgress
 from app.schemas.gamification import CampaignOut, ChapterOut, ChapterWithStatusOut, CampaignCurrentOut
 from app.services.dependencies import get_current_user
+from app.services.gamification_service import CHAPTER_REWARDS
 
 router = APIRouter()
+
+
+def _chapter_rewards(chapter_number: int) -> tuple[int, int]:
+    """Return (reward_xp, reward_coins) for the given chapter number."""
+    r = CHAPTER_REWARDS.get(chapter_number, {"xp": 0, "coins": 0})
+    return r["xp"], r["coins"]
 
 
 @router.get("", response_model=List[CampaignOut])
@@ -16,7 +23,7 @@ def list_campaigns(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Все активные кампании, отсортированные по order_index."""
+    """All active campaigns sorted by order_index."""
     return (
         db.query(Campaign)
         .filter(Campaign.is_active == True)
@@ -71,6 +78,8 @@ def get_current_campaign(
             narrative_text=ch.narrative_text,
             branch_a_label=ch.branch_a_label,
             branch_b_label=ch.branch_b_label,
+            reward_xp=_chapter_rewards(ch.chapter_number)[0],
+            reward_coins=_chapter_rewards(ch.chapter_number)[1],
         )
         for ch in chapters
     ]
@@ -89,14 +98,30 @@ def list_chapters(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Все главы кампании, отсортированные по chapter_number."""
+    """All chapters for a campaign sorted by chapter_number."""
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    return (
+    chapters = (
         db.query(CampaignChapter)
         .filter(CampaignChapter.campaign_id == campaign_id)
         .order_by(CampaignChapter.chapter_number)
         .all()
     )
+
+    return [
+        ChapterOut(
+            id=ch.id,
+            campaign_id=ch.campaign_id,
+            chapter_number=ch.chapter_number,
+            title=ch.title,
+            narrative_text=ch.narrative_text,
+            has_branch=ch.has_branch,
+            branch_a_label=ch.branch_a_label,
+            branch_b_label=ch.branch_b_label,
+            reward_xp=_chapter_rewards(ch.chapter_number)[0],
+            reward_coins=_chapter_rewards(ch.chapter_number)[1],
+        )
+        for ch in chapters
+    ]
