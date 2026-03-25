@@ -15,12 +15,14 @@ from .gamification import (
     UserAchievement
 )
 from .ml import MlPrediction, CoachMessage
+from .nutrition import FoodItem, NutritionLog, UserNutritionGoals
 
 # Можно (опционально) определить __all__ для явного экспорта
 __all__ = [
     "User", "UserSession",
     "ExerciseLibrary", "Workout", "WorkoutExercise",
-    "Campaign", "CampaignChapter", "UserProgress", "MissionTemplate", 
+    "Campaign", "CampaignChapter", "UserProgress", "MissionTemplate",
     "UserMission", "SkillTreeNode", "UserSkillTree", "Achievement", "UserAchievement",
-    "MlPrediction", "CoachMessage"
+    "MlPrediction", "CoachMessage",
+    "FoodItem", "NutritionLog", "UserNutritionGoals",
 ]

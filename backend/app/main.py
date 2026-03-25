@@ -57,6 +57,7 @@ from app.api import campaigns  # noqa: E402
 from app.api import missions      # noqa: E402
 from app.api import achievements  # noqa: E402
 from app.api import debug         # noqa: E402
+from app.api import nutrition     # noqa: E402
 
 app.include_router(auth.router,         prefix="/api/auth",         tags=["Auth"])
 app.include_router(exercises.router,    prefix="/api/exercises",    tags=["Exercises"])
@@ -66,3 +67,4 @@ app.include_router(campaigns.router,    prefix="/api/campaigns",    tags=["Gamif
 app.include_router(missions.router,     prefix="/api/missions",     tags=["Gamification"])
 app.include_router(achievements.router, prefix="/api/achievements", tags=["Gamification"])
 app.include_router(debug.router,        prefix="/api/debug",        tags=["Debug"])
+app.include_router(nutrition.router,    prefix="/api/nutrition",    tags=["Nutrition"])
