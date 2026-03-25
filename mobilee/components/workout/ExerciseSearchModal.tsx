@@ -18,7 +18,7 @@ import Svg, { Line, Path, Polyline, Circle } from 'react-native-svg';
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Button } from '../ui/Button';
 import { Input  } from '../ui/Input';
-import { searchExercises } from '../../services/database';
+import { searchExercises, cacheExercises } from '../../services/database';
 import { exerciseApi } from '../../services/workoutApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
     try {
       // Step 1: try SQLite cache (uses LIKE query, case-insensitive filter)
       const rows = await searchExercises(q, filterLower);
-      if (rows.length > 0 || q.trim()) {
+      if (rows.length > 0) {
         setResults(rows.map(r => ({
           id:           r.id,
           name:         r.name,
@@ -192,6 +192,14 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         muscle_group: customMuscle,
         category:     'compound',
       });
+      // Сохраняем в SQLite чтобы поиск находил упражнение без сети
+      await cacheExercises([{
+        id:           data.id,
+        name:         data.name,
+        muscle_group: data.muscle_group,
+        category:     data.category,
+        is_custom:    1,
+      }]);
       selectExercise({
         id:           data.id,
         name:         data.name,
