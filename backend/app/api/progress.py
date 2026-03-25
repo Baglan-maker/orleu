@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models import User, UserProgress, Campaign, CampaignChapter, Workout
-from app.schemas.gamification import ProgressOut, PatchProgressRequest
+from app.models import User, UserProgress, Campaign, CampaignChapter, Workout, Achievement, UserAchievement
+from app.schemas.gamification import ProgressOut, PatchProgressRequest, AchievementOut
 from app.services.dependencies import get_current_user
 
 router = APIRouter()
@@ -25,7 +25,11 @@ def _avatar_stage(total_sessions: int) -> tuple[int, str]:
     return 0, "Rookie"
 
 
-def _build_progress_out(progress: UserProgress, total_sessions: int) -> ProgressOut:
+def _build_progress_out(
+    progress: UserProgress,
+    total_sessions: int,
+    achievements: list[AchievementOut] | None = None,
+) -> ProgressOut:
     stage, stage_name = _avatar_stage(total_sessions)
     return ProgressOut(
         user_id=progress.user_id,
@@ -42,6 +46,7 @@ def _build_progress_out(progress: UserProgress, total_sessions: int) -> Progress
         total_sessions=total_sessions,
         avatar_stage=stage,
         avatar_stage_name=stage_name,
+        achievements=achievements or [],
     )
 
 
@@ -59,7 +64,24 @@ def get_progress(
         raise HTTPException(status_code=404, detail="Progress not found")
 
     total_sessions = db.query(Workout).filter(Workout.user_id == current_user.id).count()
-    return _build_progress_out(progress, total_sessions)
+
+    earned_map = {
+        row.achievement_id: row.earned_at
+        for row in db.query(UserAchievement)
+        .filter(UserAchievement.user_id == current_user.id)
+        .all()
+    }
+    achievements = [
+        AchievementOut(
+            id=a.id,
+            name=a.name,
+            icon_key=a.icon_key,
+            earned=a.id in earned_map,
+            earned_at=earned_map.get(a.id),
+        )
+        for a in db.query(Achievement).all()
+    ]
+    return _build_progress_out(progress, total_sessions, achievements)
 
 
 @router.patch("", response_model=ProgressOut)

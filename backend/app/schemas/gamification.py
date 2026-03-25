@@ -4,6 +4,18 @@ from uuid import UUID
 from datetime import datetime
 
 
+# ─── Achievements ─────────────────────────────────────────────────
+
+class AchievementOut(BaseModel):
+    id:        UUID
+    name:      str
+    icon_key:  str
+    earned:    bool
+    earned_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ─── Progress ────────────────────────────────────────────────────
 
 class ProgressOut(BaseModel):
@@ -21,6 +33,7 @@ class ProgressOut(BaseModel):
     total_sessions:      int = 0
     avatar_stage:        int = 0
     avatar_stage_name:   str = "Rookie"
+    achievements:        List[AchievementOut] = []
 
     model_config = {"from_attributes": True}
 

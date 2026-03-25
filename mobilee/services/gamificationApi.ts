@@ -2,6 +2,14 @@
 import { api } from './api';
 
 // ─── Types ──────────────────────────────────────────────────────
+export interface AchievementItem {
+  id:        string;
+  name:      string;
+  icon_key:  string;
+  earned:    boolean;
+  earned_at: string | null;
+}
+
 export interface ProgressResponse {
   user_id:             string;
   xp:                  number;
@@ -17,6 +25,7 @@ export interface ProgressResponse {
   total_sessions:      number;
   avatar_stage:        number;
   avatar_stage_name:   string;
+  achievements:        AchievementItem[];
 }
 
 export interface CampaignResponse {

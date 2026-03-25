@@ -1,5 +1,5 @@
 // mobile/app/(tabs)/campaign.tsx
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
@@ -38,14 +38,15 @@ interface DisplayNode {
 }
 
 export default function CampaignScreen() {
-  const [progress,   setProgress]   = useState<ProgressResponse | null>(null);
-  const [campaign,   setCampaign]   = useState<CampaignResponse | null>(null);
-  const [chapters,   setChapters]   = useState<ChapterResponse[]>([]);
-  const [coachMsg,   setCoachMsg]   = useState<CoachMessage | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [branch,     setBranch]     = useState<'A' | 'B' | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [confirmed,  setConfirmed]  = useState(false);
+  const [progress,    setProgress]    = useState<ProgressResponse | null>(null);
+  const [campaign,    setCampaign]    = useState<CampaignResponse | null>(null);
+  const [chapters,    setChapters]    = useState<ChapterResponse[]>([]);
+  const [coachMsg,    setCoachMsg]    = useState<CoachMessage | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [branch,      setBranch]      = useState<'A' | 'B' | null>(null);
+  const [confirming,  setConfirming]  = useState(false);
+  const [confirmed,   setConfirmed]   = useState(false);
+  const [expandedId,  setExpandedId]  = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,8 +179,12 @@ export default function CampaignScreen() {
         <View style={{ paddingHorizontal: Spacing.xxl }}>
           {nodes.map((node, i) => (
             <View key={node.id}>
-              {/* Node row */}
-              <View style={s.nodeRow}>
+              {/* Node row — tappable */}
+              <TouchableOpacity
+                style={s.nodeRow}
+                activeOpacity={node.status === 'locked' ? 0.5 : 0.75}
+                onPress={() => setExpandedId(expandedId === node.id ? null : node.id)}
+              >
                 <View style={[
                   s.nodeCircle,
                   node.status === 'done'   && s.nodeDone,
@@ -205,7 +210,52 @@ export default function CampaignScreen() {
                     </Text>
                   ) : null}
                 </View>
-              </View>
+
+                {/* Chevron */}
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"
+                  stroke={expandedId === node.id ? Colors.t2 : Colors.t3}
+                  strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                >
+                  {expandedId === node.id
+                    ? <Polyline points="18 15 12 9 6 15"/>
+                    : <Polyline points="6 9 12 15 18 9"/>}
+                </Svg>
+              </TouchableOpacity>
+
+              {/* Inline expansion panel */}
+              {expandedId === node.id && (
+                <View style={s.expandPanel}>
+                  {node.chapter ? (
+                    <>
+                      <Text style={s.expandChapterNum}>Chapter {node.chapter.chapter_number}</Text>
+                      {node.chapter.narrative_text ? (
+                        <Text style={s.expandNarrative}>{node.chapter.narrative_text}</Text>
+                      ) : (
+                        <Text style={s.expandNarrative}>
+                          {node.status === 'locked'
+                            ? 'Complete previous chapters to unlock this one.'
+                            : 'No narrative description available yet.'}
+                        </Text>
+                      )}
+                      {node.chapter.has_branch && (
+                        <View style={s.expandBranchHint}>
+                          <Text style={s.expandBranchLabel}>This chapter has a branch choice</Text>
+                          {node.chapter.branch_a_label && (
+                            <Text style={s.expandBranchOption}>A · {node.chapter.branch_a_label}</Text>
+                          )}
+                          {node.chapter.branch_b_label && (
+                            <Text style={s.expandBranchOption}>B · {node.chapter.branch_b_label}</Text>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={s.expandNarrative}>
+                      Your journey begins here. Log your first session to advance to Chapter 1.
+                    </Text>
+                  )}
+                </View>
+              )}
 
               {/* Branch selector — shown on active chapter with branch */}
               {node.status === 'active' && node.chapter?.has_branch && !confirmed && (
@@ -346,4 +396,17 @@ const s = StyleSheet.create({
   coachIcon: { width: 33, height: 33, borderRadius: 10, backgroundColor: Colors.s4, borderWidth: 1, borderColor: Colors.lineH, alignItems: 'center', justifyContent: 'center' },
   coachLabel:{ fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.bone, marginBottom: 5 },
   coachText: { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 20 },
+
+  // ── Expansion panel ──────────────────────────────────────────────
+  expandPanel: {
+    marginLeft: 58, marginBottom: 4, marginTop: -2,
+    backgroundColor: Colors.s3, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.line,
+    padding: 14,
+  },
+  expandChapterNum: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, textTransform: 'uppercase', marginBottom: 6 },
+  expandNarrative:  { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 20 },
+  expandBranchHint: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.line },
+  expandBranchLabel:{ fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.2, color: Colors.t3, textTransform: 'uppercase', marginBottom: 6 },
+  expandBranchOption:{ fontSize: 12, fontFamily: Fonts.mono, color: Colors.t2, marginBottom: 3 },
 });

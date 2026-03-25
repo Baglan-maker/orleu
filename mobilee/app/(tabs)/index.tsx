@@ -17,6 +17,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { ExerciseSearchModal, SetData } from '../../components/workout/ExerciseSearchModal';
 import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
+import { StageUpModal }          from '../../components/modals/StageUpModal';
 import { SyncStatusIndicator }   from '../../components/SyncStatusIndicator';
 import {
   useWorkoutStore,
@@ -105,6 +106,8 @@ export default function WorkoutScreen() {
   const [newLevel,        setNewLevel]        = useState(1);
   const [xpGained,        setXpGained]        = useState(0);
   const [missionVisible,  setMissionVisible]  = useState(false);
+  const [stageUpVisible,  setStageUpVisible]  = useState(false);
+  const [newStage,        setNewStage]        = useState<typeof stage>(0);
 
   const totalReps   = selectTotalReps(exercises);
   const totalVolume = selectTotalVolume(exercises);
@@ -124,6 +127,7 @@ export default function WorkoutScreen() {
 
   async function finishWorkout() {
     if (!hasExercises) return;
+    const prevStage = stage;
     const result = await submitWorkout();
     if (result) {
       setIsCelebrating(true);
@@ -136,8 +140,14 @@ export default function WorkoutScreen() {
       // Refresh progress so avatar stage and streak update immediately
       try {
         const { data } = await progressApi.get();
-        setTotalWorkouts(data.total_sessions ?? 0);
+        const sessions = data.total_sessions ?? 0;
+        setTotalWorkouts(sessions);
         setStreak(data.current_streak ?? 0);
+        const next = getAvatarStage(sessions);
+        if (next > prevStage) {
+          setNewStage(next);
+          setStageUpVisible(true);
+        }
       } catch {}
     }
   }
@@ -317,6 +327,13 @@ export default function WorkoutScreen() {
         xpGained={150}
         coinsGained={30}
         onClose={() => setMissionVisible(false)}
+      />
+
+      <StageUpModal
+        visible={stageUpVisible}
+        stage={newStage}
+        themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
+        onClose={() => setStageUpVisible(false)}
       />
     </SafeAreaView>
   );

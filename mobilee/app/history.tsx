@@ -1,8 +1,4 @@
 // mobile/app/history.tsx
-/**
- * Workout History — список прошлых тренировок.
- * Данные: GET /api/workouts (пагинация)
- */
 import { useEffect, useState, useCallback } from 'react';
 import {
   ActivityIndicator, FlatList, RefreshControl,
@@ -13,49 +9,62 @@ import { useRouter } from 'expo-router';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../constants/theme';
-import { workoutApi, WorkoutListItem, WorkoutListResponse } from '../services/workoutApi';
+import { workoutApi, type WorkoutListItem, type WorkoutListResponse } from '../services/workoutApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
-function IBack()     { return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.t1} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="15 18 9 12 15 6"/></Svg>; }
-function IDumbbell() { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M6.5 6.5h1v11h-1zM16.5 6.5h1v11h-1z"/><Line x1="4" y1="9" x2="7.5" y2="9"/><Line x1="4" y1="15" x2="7.5" y2="15"/><Line x1="16.5" y1="9" x2="20" y2="9"/><Line x1="16.5" y1="15" x2="20" y2="15"/><Line x1="7.5" y1="12" x2="16.5" y2="12"/></Svg>; }
-function IClock()    { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><Polyline points="12 6 12 12 16 14"/></Svg>; }
+function IBack()    { return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.t1} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="15 18 9 12 15 6"/></Svg>; }
+function IDumbbell(){ return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M6.5 6.5h1v11h-1zM16.5 6.5h1v11h-1z"/><Line x1="4" y1="9" x2="7.5" y2="9"/><Line x1="4" y1="15" x2="7.5" y2="15"/><Line x1="16.5" y1="9" x2="20" y2="9"/><Line x1="16.5" y1="15" x2="20" y2="15"/><Line x1="7.5" y1="12" x2="16.5" y2="12"/></Svg>; }
+function IClock()   { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><Polyline points="12 6 12 12 16 14"/></Svg>; }
+function IChevron() { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="9 18 15 12 9 6"/></Svg>; }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const d = new Date(dateStr + 'T00:00:00');
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(d);
 }
 
-function WorkoutCard({ workout }: { workout: WorkoutListItem }) {
+function formatVolume(vol: number): string {
+  return vol >= 1000
+    ? `${(vol / 1000).toFixed(1).replace(/\.0$/, '')}k kg`
+    : `${vol.toFixed(0)} kg`;
+}
+
+interface WorkoutCardProps {
+  workout:  WorkoutListItem;
+  onPress:  () => void;
+}
+
+function WorkoutCard({ workout, onPress }: WorkoutCardProps) {
   return (
-    <View style={s.card}>
-      {/* Date + duration */}
+    <TouchableOpacity style={s.card} onPress={onPress} activeOpacity={0.75}>
+      {/* Top row: date + chevron */}
       <View style={s.cardHead}>
         <Text style={s.cardDate}>{formatDate(workout.workout_date)}</Text>
-        {workout.duration_minutes != null && (
-          <View style={s.durationRow}>
-            <IClock/>
-            <Text style={s.durationText}>{workout.duration_minutes} min</Text>
-          </View>
-        )}
+        <View style={s.headRight}>
+          {workout.duration_minutes != null && (
+            <View style={s.durationRow}>
+              <IClock/>
+              <Text style={s.durationText}>{workout.duration_minutes} min</Text>
+            </View>
+          )}
+          <IChevron/>
+        </View>
       </View>
 
-      {/* Stats footer */}
+      {/* Stats row */}
       <View style={s.cardFoot}>
         <View style={s.statPill}>
           <IDumbbell/>
-          <Text style={s.statText}>{workout.total_exercises} exercises</Text>
+          <Text style={s.statText}>{workout.total_exercises} exercise{workout.total_exercises !== 1 ? 's' : ''}</Text>
         </View>
         {workout.total_volume > 0 && (
-          <View style={s.statPill}>
-            <Text style={s.statText}>{workout.total_volume.toFixed(0)} kg vol</Text>
-          </View>
+          <Text style={s.volumeText}>{formatVolume(workout.total_volume)}</Text>
         )}
       </View>
 
       {workout.notes ? (
         <Text style={s.notes} numberOfLines={2}>{workout.notes}</Text>
       ) : null}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -126,7 +135,12 @@ export default function HistoryScreen() {
         <FlatList
           data={workouts}
           keyExtractor={w => w.id}
-          renderItem={({ item }) => <WorkoutCard workout={item}/>}
+          renderItem={({ item }) => (
+            <WorkoutCard
+              workout={item}
+              onPress={() => router.push(`/workout/${item.id}` as any)}
+            />
+          )}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -174,7 +188,7 @@ const s = StyleSheet.create({
   lbl:       { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.t3, textTransform: 'uppercase', textAlign: 'center' },
   pageTitle: { fontSize: 22, fontFamily: Fonts.displayBold, color: Colors.t1, letterSpacing: -0.5, textAlign: 'center' },
 
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   errorText: { fontSize: 14, fontFamily: Fonts.regular, color: Colors.t2, textAlign: 'center', paddingHorizontal: 32 },
   retryBtn:  { backgroundColor: Colors.s3, borderRadius: Radius.md, paddingHorizontal: 24, paddingVertical: 10, borderWidth: 1, borderColor: Colors.line },
   retryText: { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1 },
@@ -188,26 +202,21 @@ const s = StyleSheet.create({
     borderColor: Colors.line,
     padding: 16,
   },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  cardDate: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1 },
+  cardHead:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  cardDate:    { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1 },
+  headRight:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   durationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  durationText: { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  durationText:{ fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
 
-  exList: { gap: 5, marginBottom: 12 },
-  exRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  exDot:  { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.t3 },
-  exName: { flex: 1, fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2 },
-  exSets: { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
-  moreText: { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2, marginLeft: 12 },
-
-  cardFoot: { flexDirection: 'row', gap: 7, flexWrap: 'wrap', marginTop: 4 },
+  cardFoot:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   statPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: Colors.s3, borderRadius: Radius.full,
     paddingHorizontal: 10, paddingVertical: 4,
     borderWidth: 1, borderColor: Colors.line,
   },
-  statText: { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  statText:   { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  volumeText: { fontSize: 16, fontFamily: Fonts.monoBold, color: Colors.bone },
 
   notes: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 10, lineHeight: 18 },
 

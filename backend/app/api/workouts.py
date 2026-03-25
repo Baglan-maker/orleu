@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement, Campaign, CampaignChapter
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
@@ -16,6 +16,9 @@ from app.services.dependencies import get_current_user
 
 router = APIRouter()
 
+
+# ── Campaign constants ─────────────────────────────────────────────────────────
+SESSIONS_PER_CHAPTER = 2   # chapters unlock every 2 completed sessions
 
 # ── XP / leveling constants ────────────────────────────────────────────────────
 BASE_XP_PER_WORKOUT = 50
@@ -163,6 +166,45 @@ def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
     return newly_earned
 
 
+def _advance_campaign_chapter(db: Session, user_id: UUID):
+    """Auto-assign campaign and advance chapter based on total sessions."""
+    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    if not progress:
+        return
+
+    # Assign first active campaign if user has none
+    if not progress.current_campaign_id:
+        first = (
+            db.query(Campaign)
+            .filter(Campaign.is_active == True)
+            .order_by(Campaign.order_index)
+            .first()
+        )
+        if not first:
+            return
+        progress.current_campaign_id = first.id
+
+    chapters = (
+        db.query(CampaignChapter)
+        .filter(CampaignChapter.campaign_id == progress.current_campaign_id)
+        .order_by(CampaignChapter.chapter_number)
+        .all()
+    )
+    if not chapters:
+        return
+
+    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
+    chapter_idx = min((total_sessions - 1) // SESSIONS_PER_CHAPTER, len(chapters) - 1)
+    target = chapters[chapter_idx]
+
+    if progress.current_chapter_id is None:
+        progress.current_chapter_id = target.id
+    else:
+        current = next((c for c in chapters if c.id == progress.current_chapter_id), None)
+        if current is None or target.chapter_number > current.chapter_number:
+            progress.current_chapter_id = target.id
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
@@ -278,6 +320,9 @@ def create_workout(
 
     # Check achievements after all stats are updated
     newly_earned = _check_achievements(db, current_user.id)
+
+    # Auto-advance campaign chapter
+    _advance_campaign_chapter(db, current_user.id)
 
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)
