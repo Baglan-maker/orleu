@@ -244,6 +244,8 @@ def create_workout(
     workout.exercises = _load_with_exercises(db, workout.id)
     db.refresh(workout)
 
+    # Re-fetch progress so SQLAlchemy identity map is cleared before chapter check
+    db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
     # Advance campaign chapter (separate commit inside try_advance_chapter)
     try_advance_chapter(current_user.id, db)
 

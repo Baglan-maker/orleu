@@ -13,7 +13,7 @@ from app.db.database import get_db
 from app.config import settings
 from app.models import (
     User, Workout, ExerciseLibrary, UserProgress,
-    UserMission, UserAchievement,
+    UserMission, UserAchievement, CampaignChapter,
 )
 from app.models.workout import WorkoutExercise
 from app.services.dependencies import get_current_user
@@ -40,6 +40,7 @@ class TimeTravelRequest(BaseModel):
     clear_achievements: bool = Field(False, description="Remove all earned achievements for this user")
     check_achievements: bool = Field(True, description="Re-check achievement conditions after applying changes")
     advance_chapter: bool = Field(False, description="Try to advance campaign chapter after applying changes")
+    reset_campaign_progress: bool = Field(False, description="Reset campaign_path to None and current_chapter_id back to chapter 1")
 
 
 class TimeTravelResponse(BaseModel):
@@ -112,6 +113,19 @@ def time_travel(
 
     if body.set_campaign_path is not None:
         progress.campaign_path = body.set_campaign_path
+
+    if body.reset_campaign_progress:
+        progress.campaign_path = None
+        # Reset chapter pointer back to chapter 1 of the current campaign
+        if progress.current_campaign_id is not None:
+            first_chapter = (
+                db.query(CampaignChapter)
+                .filter(CampaignChapter.campaign_id == progress.current_campaign_id)
+                .order_by(CampaignChapter.chapter_number)
+                .first()
+            )
+            if first_chapter:
+                progress.current_chapter_id = first_chapter.id
 
     achievements_cleared = False
     if body.clear_achievements:

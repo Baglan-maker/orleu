@@ -64,8 +64,8 @@ def check_chapter_completion(user_progress: UserProgress, chapter: CampaignChapt
     Uses persistent counters stored on UserProgress (total_workouts, missions_completed_count).
     """
     n  = chapter.chapter_number
-    tw = user_progress.total_workouts
-    mc = user_progress.missions_completed_count
+    tw = user_progress.total_workouts or 0
+    mc = user_progress.missions_completed_count or 0
 
     if n == 1:
         # First Steps — log 3 sessions

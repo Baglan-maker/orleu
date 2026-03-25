@@ -5,7 +5,7 @@ import {
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, router } from 'expo-router';
 import Svg, { Line, Path, Polyline, Polygon } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing, AvatarThemes, getAvatarStage, type AvatarThemeId } from '../../constants/theme';
@@ -104,6 +104,20 @@ export default function StatsScreen() {
   const [totalWorkouts,  setTotalWorkouts]  = useState(0);
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutListItem[]>([]);
   const [loading,        setLoading]        = useState(true);
+
+  // Debug panel — 5-tap on level number
+  const tapCountRef  = useRef(0);
+  const tapTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleLevelTap() {
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0;
+      router.push('/debug');
+      return;
+    }
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 2000);
+  }
 
   // Achievements
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
@@ -235,7 +249,9 @@ export default function StatsScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.stageName}>{theme.name} · {STAGE_NAMES[stage]}</Text>
-              <Text style={s.levelNum}>Level {level}</Text>
+              <TouchableOpacity onPress={handleLevelTap} activeOpacity={1}>
+                <Text style={s.levelNum}>Level {level}</Text>
+              </TouchableOpacity>
               <ProgressBar
                 value={xpPct}
                 color={Colors.cr}
