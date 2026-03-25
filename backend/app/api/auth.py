@@ -32,6 +32,7 @@ from app.services.auth_utils import (
     verify_password,
 )
 from app.services.dependencies import get_current_user
+from app.services.gamification_service import try_advance_chapter
 from app.config import settings
 
 router = APIRouter()
@@ -82,6 +83,9 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.add(session)
     db.commit()
     db.refresh(user)
+
+    # Assign first campaign + chapter 1 so the campaign screen is not empty
+    try_advance_chapter(user.id, db)
 
     return TokenResponse(
         access_token  = access_token,

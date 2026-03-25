@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.models import User, UserProgress, Campaign, CampaignChapter, Workout, Achievement, UserAchievement
 from app.schemas.gamification import ProgressOut, PatchProgressRequest, AchievementOut
 from app.services.dependencies import get_current_user
+from app.services.gamification_service import try_advance_chapter
 
 router = APIRouter()
 
@@ -124,5 +125,24 @@ def patch_progress(
 
     db.commit()
     db.refresh(progress)
+
+    # After path is saved, try to advance chapter 3 → 4
+    if body.campaign_path is not None:
+        try_advance_chapter(current_user.id, db)
+        db.refresh(progress)
+
     total_sessions = db.query(Workout).filter(Workout.user_id == current_user.id).count()
-    return _build_progress_out(progress, total_sessions)
+    earned_map = {
+        row.achievement_id: row.earned_at
+        for row in db.query(UserAchievement)
+        .filter(UserAchievement.user_id == current_user.id)
+        .all()
+    }
+    achievements = [
+        AchievementOut(
+            id=a.id, name=a.name, icon_key=a.icon_key,
+            earned=a.id in earned_map, earned_at=earned_map.get(a.id),
+        )
+        for a in db.query(Achievement).all()
+    ]
+    return _build_progress_out(progress, total_sessions, achievements)

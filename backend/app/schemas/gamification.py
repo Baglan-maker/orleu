@@ -70,6 +70,28 @@ class ChapterOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChapterWithStatusOut(BaseModel):
+    id:             UUID
+    chapter_number: int
+    title:          str
+    status:         str   # "completed" | "active" | "locked"
+    has_branch:     bool
+    narrative_text: Optional[str] = None
+    branch_a_label: Optional[str] = None
+    branch_b_label: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class CampaignCurrentOut(BaseModel):
+    campaign:        CampaignOut
+    current_chapter: Optional[ChapterOut] = None
+    chapters:        List[ChapterWithStatusOut]
+    campaign_path:   Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ─── Missions ───────────────────────────────────────────────────
 
 class MissionTemplateOut(BaseModel):

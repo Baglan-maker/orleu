@@ -6,19 +6,17 @@ from datetime import datetime, timezone, timedelta
 import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement, Campaign, CampaignChapter
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
     WorkoutListItem, WorkoutListResponse, AchievementEarned,
 )
 from app.services.dependencies import get_current_user
+from app.services.gamification_service import try_advance_chapter
 
 router = APIRouter()
 
-
-# ── Campaign constants ─────────────────────────────────────────────────────────
-SESSIONS_PER_CHAPTER = 2   # chapters unlock every 2 completed sessions
 
 # ── XP / leveling constants ────────────────────────────────────────────────────
 BASE_XP_PER_WORKOUT = 50
@@ -54,8 +52,9 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     else:
         progress.current_streak = 1
 
-    progress.longest_streak = max(progress.longest_streak, progress.current_streak)
+    progress.longest_streak  = max(progress.longest_streak, progress.current_streak)
     progress.last_workout_at = now
+    progress.total_workouts  = (progress.total_workouts or 0) + 1
 
     # Award XP and check level-up
     old_level = progress.level
@@ -116,10 +115,11 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
             # Award mission XP and coins
             progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
             if progress:
-                um.xp_awarded = tmpl.base_xp
+                um.xp_awarded    = tmpl.base_xp
                 um.coins_awarded = tmpl.base_coins
                 progress.xp += tmpl.base_xp
                 progress.coins += tmpl.base_coins
+                progress.missions_completed_count = (progress.missions_completed_count or 0) + 1
 
 
 def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
@@ -164,45 +164,6 @@ def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
             newly_earned.append(ach)
 
     return newly_earned
-
-
-def _advance_campaign_chapter(db: Session, user_id: UUID):
-    """Auto-assign campaign and advance chapter based on total sessions."""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
-    if not progress:
-        return
-
-    # Assign first active campaign if user has none
-    if not progress.current_campaign_id:
-        first = (
-            db.query(Campaign)
-            .filter(Campaign.is_active == True)
-            .order_by(Campaign.order_index)
-            .first()
-        )
-        if not first:
-            return
-        progress.current_campaign_id = first.id
-
-    chapters = (
-        db.query(CampaignChapter)
-        .filter(CampaignChapter.campaign_id == progress.current_campaign_id)
-        .order_by(CampaignChapter.chapter_number)
-        .all()
-    )
-    if not chapters:
-        return
-
-    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
-    chapter_idx = min((total_sessions - 1) // SESSIONS_PER_CHAPTER, len(chapters) - 1)
-    target = chapters[chapter_idx]
-
-    if progress.current_chapter_id is None:
-        progress.current_chapter_id = target.id
-    else:
-        current = next((c for c in chapters if c.id == progress.current_chapter_id), None)
-        if current is None or target.chapter_number > current.chapter_number:
-            progress.current_chapter_id = target.id
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -321,12 +282,12 @@ def create_workout(
     # Check achievements after all stats are updated
     newly_earned = _check_achievements(db, current_user.id)
 
-    # Auto-advance campaign chapter
-    _advance_campaign_chapter(db, current_user.id)
-
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)
     db.refresh(workout)
+
+    # Advance campaign chapter (separate commit inside try_advance_chapter)
+    try_advance_chapter(current_user.id, db)
 
     gamification = {
         **(reward or {}),
