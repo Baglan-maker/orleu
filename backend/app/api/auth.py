@@ -21,6 +21,7 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
+    UpdateMeRequest,
     UserResponse,
 )
 from app.services.auth_utils import (
@@ -178,4 +179,18 @@ def logout(
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     """Возвращает данные текущего аутентифицированного юзера."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    body: UpdateMeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Обновляет профиль текущего юзера (onboarding_done и т.п.)."""
+    if body.onboarding_done is not None:
+        current_user.onboarding_done = body.onboarding_done
+    db.commit()
+    db.refresh(current_user)
     return UserResponse.model_validate(current_user)

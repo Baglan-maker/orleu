@@ -16,7 +16,7 @@ import {
   getRefreshToken,
   clearAll,
 } from '../services/storage';
-import { authApi } from '../services/api';
+import { authApi, registerForceLogout } from '../services/api';
 
 // ─── Типы ────────────────────────────────────────────────────────
 export interface User {
@@ -138,3 +138,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     saveUser(user);
   },
 }));
+
+// Wire up force-logout so the API interceptor can reset auth state
+// when the refresh token expires (avoids circular dependency)
+registerForceLogout(() => {
+  useAuthStore.setState({ user: null, isLoggedIn: false });
+});

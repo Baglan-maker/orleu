@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
@@ -12,6 +12,11 @@ class ExerciseCreate(BaseModel):
     muscle_group: str
     category:     str           = "isolation"
     alias:        Optional[str] = None
+
+    @field_validator("muscle_group", "category", mode="before")
+    @classmethod
+    def normalize_lower(cls, v: str) -> str:
+        return v.lower() if isinstance(v, str) else v
 
 
 class ExerciseOut(BaseModel):
