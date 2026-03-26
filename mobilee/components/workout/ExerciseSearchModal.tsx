@@ -81,14 +81,16 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   const [filter,      setFilter]      = useState('All');
   const [results,     setResults]     = useState<ExerciseItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [useFallback, setUseFallback] = useState(false);
+  const [useFallback,    setUseFallback]    = useState(false);
+  const [fallbackAlert,  setFallbackAlert]  = useState(false);
 
   const [selected, setSelected] = useState<ExerciseItem | null>(null);
   const [sets,     setSets]     = useState('3');
   const [reps,     setReps]     = useState('10');
   const [weight,   setWeight]   = useState('0');
 
-  const [showCustom,   setShowCustom]   = useState(false);
+  const [showCustom,     setShowCustom]     = useState(false);
+  const [customError,    setCustomError]    = useState<string | null>(null);
   const [customName,   setCustomName]   = useState('');
   const [customMuscle, setCustomMuscle] = useState('Chest');
   const [savingCustom, setSavingCustom] = useState(false);
@@ -166,6 +168,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   }, [query, filter, visible, runSearch]);
 
   function selectExercise(ex: ExerciseItem) {
+    // Fallback exercises have fake short IDs — they will fail on the backend
+    if (useFallback) {
+      setFallbackAlert(true);
+      return;
+    }
     setSelected(ex);
     setShowCustom(false);
   }
@@ -208,14 +215,9 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         is_custom:    true,
       });
     } catch {
-      // Если API недоступен — используем временный ID
-      selectExercise({
-        id:           `custom_${Date.now()}`,
-        name:         customName.trim(),
-        muscle_group: customMuscle,
-        category:     'compound',
-        is_custom:    true,
-      });
+      // Don't create a fake offline ID — it will cause a FK violation on the backend.
+      // The user must retry when connected.
+      setCustomError('No connection. Connect to the internet to create a custom exercise.');
     } finally {
       setSavingCustom(false);
     }
@@ -226,6 +228,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
     setSelected(null); setShowCustom(false);
     setSets('3'); setReps('10'); setWeight('0');
     setCustomName(''); setCustomMuscle('Chest');
+    setCustomError(null); setFallbackAlert(false);
     setResults([]);
   }
 
@@ -302,9 +305,12 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
               label="Exercise name"
               placeholder="e.g. Banded Hip Thrust"
               value={customName}
-              onChangeText={setCustomName}
+              onChangeText={v => { setCustomName(v); setCustomError(null); }}
               autoFocus
             />
+            {customError && (
+              <Text style={s.customError}>{customError}</Text>
+            )}
             <Text style={[s.sectionLbl, { marginBottom: 10 }]}>MUSCLE GROUP</Text>
             <View style={s.muscleGrid}>
               {MUSCLE_GROUPS.filter(g => g !== 'All').map(g => (
@@ -363,7 +369,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
 
             {useFallback && (
               <View style={s.offlineBanner}>
-                <Text style={s.offlineText}>Offline cache — connect to sync full library</Text>
+                <Text style={s.offlineText}>
+                  {fallbackAlert
+                    ? 'Connect to the internet to add exercises — offline list is for preview only.'
+                    : 'Offline — connect to sync full library and enable adding exercises.'}
+                </Text>
               </View>
             )}
 
@@ -467,4 +477,5 @@ const s = StyleSheet.create({
   muscleChip:     { paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.full, backgroundColor: Colors.s3, borderWidth: 1, borderColor: Colors.line },
   muscleChipText: { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t3 },
   customActions:  { flexDirection: 'row', gap: 10, marginTop: 8 },
+  customError:    { fontSize: 12, fontFamily: Fonts.regular, color: Colors.cr, marginBottom: 12 },
 });

@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand';
 import { workoutApi, WorkoutResponse } from '../services/workoutApi';
-import { saveWorkoutLocal, markWorkoutSynced, getPendingWorkouts } from '../services/database';
+import { saveWorkoutLocal, markWorkoutSynced, getPendingWorkouts, getExercisesForWorkout } from '../services/database';
 
 // ─── Типы ────────────────────────────────────────────────────────
 export interface WorkoutExercise {
@@ -131,20 +131,45 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? 'Workout saved offline. Will sync when connected.';
       set({ submitStatus: 'error', error: msg });
-      setTimeout(() => get().resetSession(), 2000);
+      // Do NOT reset session — workout is pending in SQLite, user data is safe
       return null;
     }
   },
 
   // ── syncPending ──────────────────────────────────────────────
-  // Отправляет все несинкнутые тренировки из SQLite
+  // Отправляет все несинкнутые тренировки из SQLite на сервер
   syncPending: async () => {
     try {
       const pending = await getPendingWorkouts();
       for (const w of pending) {
-        // TODO: fetch exercises for this workout and POST
-        // Полная реализация требует join с workout_exercises_local
-        await markWorkoutSynced(w.id).catch(() => {});
+        try {
+          const exercises = await getExercisesForWorkout(w.id);
+          // Skip workouts that contain unsynced fake IDs (fallback or custom offline)
+          const hasInvalidId = exercises.some(
+            ex => !ex.exercise_id.includes('-') || ex.exercise_id.startsWith('custom_')
+          );
+          if (hasInvalidId) {
+            console.warn('[workoutStore] skipping workout with invalid exercise IDs:', w.id);
+            continue;
+          }
+          const payload = {
+            workout_date:     w.workout_date,
+            duration_minutes: w.duration_minutes ?? null,
+            notes:            w.notes ?? null,
+            exercises:        exercises.map(ex => ({
+              exercise_id: ex.exercise_id,
+              sets:        ex.sets,
+              reps:        ex.reps,
+              weight_kg:   ex.weight_kg,
+              order_index: ex.order_index,
+            })),
+          };
+          await workoutApi.createWorkout(payload);
+          await markWorkoutSynced(w.id).catch(() => {});
+        } catch (syncErr) {
+          // Leave as pending — will retry next time
+          console.warn('[workoutStore] failed to sync workout', w.id, syncErr);
+        }
       }
       await get().loadPendingCount();
     } catch (err) {

@@ -193,6 +193,14 @@ export async function markWorkoutSynced(localId: string): Promise<void> {
   await db.runAsync('UPDATE workouts_local SET synced = 1 WHERE id = ?', [localId]);
 }
 
+export async function getExercisesForWorkout(workoutLocalId: string): Promise<LocalWorkoutExercise[]> {
+  const db = await getDb();
+  return db.getAllAsync<LocalWorkoutExercise>(
+    'SELECT exercise_id, name, sets, reps, weight_kg, order_index FROM workout_exercises_local WHERE workout_local_id = ? ORDER BY order_index ASC',
+    [workoutLocalId]
+  );
+}
+
 export async function getPendingCount(): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ cnt: number }>(
