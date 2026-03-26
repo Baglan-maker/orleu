@@ -157,4 +157,5 @@ class UserMissionOut(BaseModel):
 
 class AvailableMissionsOut(BaseModel):
     active:    List[UserMissionOut]
+    completed: List[UserMissionOut] = []
     available: List[MissionTemplateOut]

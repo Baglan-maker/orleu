@@ -221,9 +221,11 @@ export default function WorkoutScreen() {
           setStageUpVisible(true);
         }
 
-        // Detect missions that were active before but are no longer active = just completed
-        const afterActiveIds = new Set(missionsRes.data.active.map(m => m.id));
-        const justCompleted = missionsBefore.filter(m => !afterActiveIds.has(m.id));
+        // Detect newly completed missions: present in completed list but weren't before
+        const beforeActiveIds = new Set(missionsBefore.map(m => m.id));
+        const justCompleted = (missionsRes.data.completed ?? []).filter(
+          m => beforeActiveIds.has(m.id)
+        );
         setActiveMissions(missionsRes.data.active);
         if (justCompleted.length > 0) {
           setCompletedMission(justCompleted[0]);

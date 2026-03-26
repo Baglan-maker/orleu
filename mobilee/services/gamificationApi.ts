@@ -111,6 +111,7 @@ export interface UserMissionResponse {
 
 export interface AvailableMissionsResponse {
   active:    UserMissionResponse[];
+  completed: UserMissionResponse[];
   available: MissionTemplateResponse[];
 }
 

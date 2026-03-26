@@ -95,7 +95,8 @@ def get_missions(
         available.append(tmpl_out)
 
     return AvailableMissionsOut(
-        active=active_out + completed_out,
+        active=active_out,
+        completed=completed_out,
         available=available,
     )
 
@@ -135,9 +136,9 @@ def accept_mission(
             UserMission.status == "active",
             UserMission.expires_at > now,
         )
-        .count()
+        .all()
     )
-    if active_count >= 2:
+    if len(active_count) >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
     # Scale target based on user level (cap at level 50 to prevent exponential blowup)

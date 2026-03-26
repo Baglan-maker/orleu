@@ -21,7 +21,7 @@ import {
 // ─── Icons ────────────────────────────────────────────────────────
 function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
 function IUp()     { return <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
-function IZap(c=Colors.t3)   { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>; }
+function IZap(c: string = Colors.t3) { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>; }
 function ICheck()  { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
 
 type DifficultyLevel = 'hard' | 'medium' | 'easy';
@@ -45,16 +45,19 @@ const TYPE_DOTS: Record<DifficultyLevel, number> = {
 };
 
 export default function MissionsScreen() {
-  const [activeMissions, setActiveMissions]     = useState<UserMissionResponse[]>([]);
+  const [activeMissions,    setActiveMissions]    = useState<UserMissionResponse[]>([]);
+  const [completedMissions, setCompletedMissions] = useState<UserMissionResponse[]>([]);
   const [availableTemplates, setAvailableTemplates] = useState<MissionTemplateResponse[]>([]);
-  const [selected, setSelected]   = useState<string[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [accepting, setAccepting] = useState(false);
+  const [selected, setSelected]       = useState<string[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [accepting, setAccepting]     = useState(false);
+  const [completedOpen, setCompletedOpen] = useState(false);
 
   const fetchMissions = useCallback(async () => {
     try {
       const { data } = await missionApi.getAll();
       setActiveMissions(data.active);
+      setCompletedMissions(data.completed ?? []);
       setAvailableTemplates(data.available);
     } catch {
       // Keep existing state
@@ -147,7 +150,7 @@ export default function MissionsScreen() {
               const pct = m.adjusted_target > 0
                 ? Math.min(100, Math.round((m.current_progress / m.adjusted_target) * 100))
                 : 0;
-              const tc = m.status === 'completed' ? Colors.up : TYPE_COLOR[diff];
+              const tc = TYPE_COLOR[diff];
 
               return (
                 <View key={m.id} style={s.mcard}>
@@ -155,9 +158,7 @@ export default function MissionsScreen() {
                   <View style={s.mHead}>
                     <View>
                       <Text style={s.mName}>{m.name}</Text>
-                      <Text style={[s.mType, { color: tc }]}>
-                        {m.status === 'completed' ? 'COMPLETED' : TYPE_LABEL[diff]}
-                      </Text>
+                      <Text style={[s.mType, { color: tc }]}>{TYPE_LABEL[diff]}</Text>
                     </View>
                     <View style={s.dots}>
                       {[1, 2, 3, 4, 5].map(d => (
@@ -181,6 +182,68 @@ export default function MissionsScreen() {
                     <View style={s.xpRow}>
                       {IZap(Colors.t3)}
                       <Text style={s.xpText}>{m.xp_reward} XP</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Completed this week (collapsed) ── */}
+        {completedMissions.length > 0 && (
+          <View style={{ paddingHorizontal: Spacing.lg }}>
+            <TouchableOpacity
+              style={s.completedHeader}
+              onPress={() => setCompletedOpen(o => !o)}
+              activeOpacity={0.7}
+            >
+              <View style={s.completedHeaderLeft}>
+                <View style={s.completedDot}/>
+                <Text style={s.lbl}>Completed this week</Text>
+                <View style={s.completedBadge}>
+                  <Text style={s.completedBadgeText}>{completedMissions.length}</Text>
+                </View>
+              </View>
+              <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <Polyline points={completedOpen ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}/>
+              </Svg>
+            </TouchableOpacity>
+
+            {completedOpen && completedMissions.map(m => {
+              const diff = getDifficulty(m.xp_reward);
+              const pct = 100;
+
+              return (
+                <View key={m.id} style={[s.mcard, s.mcardCompleted]}>
+                  <View style={[s.stripe, { backgroundColor: Colors.up }]}/>
+                  <View style={s.mHead}>
+                    <View>
+                      <Text style={[s.mName, s.mNameCompleted]}>{m.name}</Text>
+                      <Text style={[s.mType, { color: Colors.up }]}>COMPLETED</Text>
+                    </View>
+                    <View style={s.dots}>
+                      {[1, 2, 3, 4, 5].map(d => (
+                        <View key={d} style={[
+                          s.dot,
+                          { backgroundColor: d <= TYPE_DOTS[diff] ? Colors.up : Colors.s5 },
+                        ]}/>
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={s.mDesc}>{m.description}</Text>
+                  <ProgressBar
+                    value={pct}
+                    color={Colors.up}
+                    height={4}
+                    leftText={`${Math.round(m.adjusted_target)} / ${Math.round(m.adjusted_target)}`}
+                    rightText="100%"
+                    style={{ marginBottom: 12 }}
+                  />
+                  <View style={s.mFoot}>
+                    <View style={s.xpRow}>
+                      {IZap(Colors.up)}
+                      <Text style={[s.xpText, { color: Colors.up }]}>+{m.xp_reward} XP earned</Text>
                     </View>
                   </View>
                 </View>
@@ -313,4 +376,18 @@ const s = StyleSheet.create({
   checkBadge: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 
   resetNote: { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', marginTop: 8 },
+
+  completedHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, marginBottom: 4,
+  },
+  completedHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  completedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.up },
+  completedBadge: {
+    backgroundColor: `${Colors.up}20`, borderRadius: Radius.full,
+    paddingHorizontal: 7, paddingVertical: 2,
+  },
+  completedBadgeText: { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.up },
+  mcardCompleted: { opacity: 0.65 },
+  mNameCompleted: { color: Colors.t2 },
 });
