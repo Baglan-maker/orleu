@@ -16,7 +16,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { useAuthStore } from '../../store/authStore';
 import { useAchievementStore } from '../../store/achievementStore';
 import { progressApi, type ProgressResponse } from '../../services/gamificationApi';
-import { workoutApi, type WorkoutListItem } from '../../services/workoutApi';
+import { workoutApi, prsApi, type WorkoutListItem, type PRCurrentItem } from '../../services/workoutApi';
 import { AchievementIcon } from '../../components/achievement/AchievementIcon';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -103,6 +103,8 @@ export default function StatsScreen() {
   const [progress,       setProgress]       = useState<ProgressResponse | null>(null);
   const [totalWorkouts,  setTotalWorkouts]  = useState(0);
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutListItem[]>([]);
+  const [prs,            setPrs]            = useState<PRCurrentItem[]>([]);
+  const [prExpanded,     setPrExpanded]     = useState(false);
   const [loading,        setLoading]        = useState(true);
 
   // Debug panel — 5-tap on level number
@@ -132,15 +134,17 @@ export default function StatsScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const [progRes, histRes] = await Promise.all([
+          const [progRes, histRes, prsRes] = await Promise.all([
             progressApi.get(),
             workoutApi.getHistory(50),
+            prsApi.getAll(),
           ]);
           if (cancelled) return;
           setProgress(progRes.data);
           setTotalWorkouts(progRes.data.total_sessions ?? 0);
           const hist = (histRes.data as any).items ?? [];
           setWorkoutHistory(hist);
+          setPrs(prsRes.data);
           fetchAchievements();
         } catch {
           // fallback — keep defaults
@@ -341,6 +345,42 @@ export default function StatsScreen() {
           </View>
         </Card>
 
+        {/* ── Personal Records ── */}
+        {prs.length > 0 && (
+          <Card>
+            <TouchableOpacity style={s.achHeader} onPress={() => setPrExpanded(v => !v)} activeOpacity={0.7}>
+              <View style={s.achHeaderLeft}>
+                <Text style={s.chartTitle}>Personal Records</Text>
+                <Text style={s.achCountBadge}>{prs.length}</Text>
+              </View>
+              <IChevron rotated={prExpanded} />
+            </TouchableOpacity>
+
+            {(prExpanded ? prs : prs.slice(0, 5)).map((pr, i) => {
+              const d = new Date(pr.achieved_at);
+              const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+              return (
+                <View key={pr.exercise_id} style={[s.prRow, i > 0 && s.prRowBorder]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
+                    <Text style={s.prDate}>{pr.muscle_group} · {dateStr}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={s.prLift}>{pr.weight_kg} kg × {pr.reps}</Text>
+                    <Text style={s.pr1rm}>{pr.estimated_1rm.toFixed(1)} kg 1RM</Text>
+                  </View>
+                </View>
+              );
+            })}
+
+            {!prExpanded && prs.length > 5 && (
+              <TouchableOpacity onPress={() => setPrExpanded(true)} style={s.viewAllBtn} activeOpacity={0.7}>
+                <Text style={s.viewAllText}>View all {prs.length} records</Text>
+              </TouchableOpacity>
+            )}
+          </Card>
+        )}
+
         {/* ── Achievements (collapsible) ── */}
         <Card>
           <TouchableOpacity style={s.achHeader} onPress={toggleAchExpanded} activeOpacity={0.7}>
@@ -462,4 +502,14 @@ const s = StyleSheet.create({
   achItem:       { width: '33.33%', alignItems: 'center', gap: 6, marginBottom: 12 },
   achBox:        { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   achLabel:      { fontSize: 9, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', width: 56, lineHeight: 13 },
+
+  // ── Personal Records ────────────────────────────────────────────
+  prRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  prRowBorder: { borderTopWidth: 1, borderTopColor: Colors.line },
+  prName:      { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, marginBottom: 2 },
+  prDate:      { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  prLift:      { fontSize: 14, fontFamily: Fonts.monoBold, color: Colors.bone },
+  pr1rm:       { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  viewAllBtn:  { paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.line, alignItems: 'center' },
+  viewAllText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr },
 });

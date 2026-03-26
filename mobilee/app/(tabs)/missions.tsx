@@ -1,7 +1,7 @@
 // mobile/app/(tabs)/missions.tsx
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -73,13 +73,19 @@ export default function MissionsScreen() {
   );
 
   function toggle(id: string) {
-    setSelected(prev =>
-      prev.includes(id)
-        ? prev.filter(x => x !== id)
-        : prev.length < 2
-          ? [...prev, id]
-          : prev
-    );
+    if (activeMissions.length >= 2) {
+      Alert.alert('Mission limit reached', 'Complete or wait for an active mission to expire before starting a new one.');
+      return;
+    }
+    setSelected(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      const slotsLeft = 2 - activeMissions.length;
+      if (prev.length >= slotsLeft) {
+        Alert.alert('Selection limit', `You can only start ${slotsLeft} more mission${slotsLeft === 1 ? '' : 's'} (you already have ${activeMissions.length} active).`);
+        return prev;
+      }
+      return [...prev, id];
+    });
   }
 
   async function startMissions() {
@@ -255,22 +261,30 @@ export default function MissionsScreen() {
         {/* ── Available missions to pick ── */}
         {availableTemplates.length > 0 && (
           <View style={{ paddingHorizontal: Spacing.lg }}>
-            <Text style={[s.lbl, { marginBottom: 12, marginTop: activeMissions.length > 0 ? 8 : 0 }]}>
-              Select up to 2 missions
-            </Text>
+            {activeMissions.length >= 2 ? (
+              <View style={s.limitBanner}>
+                <Text style={s.limitBannerText}>Mission slots full — complete an active mission to start a new one.</Text>
+              </View>
+            ) : (
+              <Text style={[s.lbl, { marginBottom: 12, marginTop: activeMissions.length > 0 ? 8 : 0 }]}>
+                Select up to {2 - activeMissions.length} mission{2 - activeMissions.length === 1 ? '' : 's'}
+              </Text>
+            )}
             {availableTemplates.map(t => {
-              const diff = getDifficulty(t.base_xp);
-              const tc   = TYPE_COLOR[diff];
-              const isOn = selected.includes(t.id);
-              const desc = t.description_template.replace('{target}', String(Math.round(t.base_target)));
+              const diff    = getDifficulty(t.base_xp);
+              const tc      = TYPE_COLOR[diff];
+              const isOn    = selected.includes(t.id);
+              const locked  = activeMissions.length >= 2;
+              const desc    = t.description_template.replace('{target}', String(Math.round(t.base_target)));
 
               return (
                 <TouchableOpacity
                   key={t.id}
                   onPress={() => toggle(t.id)}
-                  activeOpacity={0.85}
+                  activeOpacity={locked ? 1 : 0.85}
                   style={[
                     s.mcard,
+                    locked && s.mcardLocked,
                     isOn && { borderColor: Colors.crBdr, backgroundColor: Colors.crLo },
                   ]}
                 >
@@ -314,7 +328,7 @@ export default function MissionsScreen() {
             <Button
               label={accepting ? 'Starting...' : `Start ${selected.length} mission${selected.length > 1 ? 's' : ''}`}
               onPress={startMissions}
-              disabled={accepting}
+              disabled={accepting || activeMissions.length >= 2}
             />
             <Text style={s.resetNote}>Missions reset every Monday</Text>
           </View>
@@ -390,4 +404,14 @@ const s = StyleSheet.create({
   completedBadgeText: { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.up },
   mcardCompleted: { opacity: 0.65 },
   mNameCompleted: { color: Colors.t2 },
+  mcardLocked:    { opacity: 0.4 },
+
+  limitBanner: {
+    backgroundColor: `${Colors.cr}12`,
+    borderWidth: 1, borderColor: Colors.crBdr,
+    borderRadius: Radius.md,
+    paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 12, marginTop: 8,
+  },
+  limitBannerText: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.cr, lineHeight: 18 },
 });

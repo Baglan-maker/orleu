@@ -9,10 +9,10 @@ from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
-    WorkoutListItem, WorkoutListResponse, AchievementEarned,
+    WorkoutListItem, WorkoutListResponse, AchievementEarned, PROut,
 )
 from app.services.dependencies import get_current_user
-from app.services.gamification_service import try_advance_chapter, check_and_award_achievements
+from app.services.gamification_service import try_advance_chapter, check_and_award_achievements, check_and_update_prs
 
 router = APIRouter()
 
@@ -205,6 +205,7 @@ def _to_workout_out(
         new_level=gam.get("new_level"),
         leveled_up=gam.get("leveled_up", False),
         achievements=gam.get("achievements", []),
+        new_prs=gam.get("new_prs", []),
         created_at=workout.created_at,
         updated_at=workout.updated_at,
     )
@@ -284,6 +285,9 @@ def create_workout(
     reward = _award_xp_and_streak(db, current_user.id, workout_exercises)
     db.flush()
 
+    # Check and update personal records
+    pr_results = check_and_update_prs(current_user.id, workout_exercises, db)
+
     # Check achievements after all stats are updated
     newly_earned = check_and_award_achievements(current_user.id, db)
 
@@ -304,6 +308,18 @@ def create_workout(
                 description=a.description, icon_key=a.icon_key,
             )
             for a in newly_earned
+        ],
+        "new_prs": [
+            PROut(
+                exercise_id=pr.exercise_id,
+                exercise_name=pr.exercise_name,
+                new_1rm=pr.new_1rm,
+                previous_1rm=pr.previous_1rm,
+                improvement_pct=pr.improvement_pct,
+                weight_kg=pr.weight_kg,
+                reps=pr.reps,
+            )
+            for pr in pr_results
         ],
     }
     return _to_workout_out(workout, gamification=gamification)

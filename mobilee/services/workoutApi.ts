@@ -50,6 +50,16 @@ export interface AchievementEarned {
   icon_key:    string;
 }
 
+export interface PRResult {
+  exercise_id:     string;
+  exercise_name:   string;
+  new_1rm:         number;
+  previous_1rm:    number | null;
+  improvement_pct: number | null;
+  weight_kg:       number;
+  reps:            number;
+}
+
 export interface WorkoutResponse {
   id:               string;
   user_id:          string;
@@ -63,9 +73,33 @@ export interface WorkoutResponse {
   new_level:        number | null;
   leveled_up:       boolean;
   achievements:     AchievementEarned[];
+  new_prs:          PRResult[];
   created_at:       string;
   updated_at:       string;
 }
+
+export interface PRCurrentItem {
+  exercise_id:     string;
+  exercise_name:   string;
+  muscle_group:    string;
+  estimated_1rm:   number;
+  weight_kg:       number;
+  reps:            number;
+  achieved_at:     string;
+  improvement_pct: number | null;
+  total_pr_count:  number;
+}
+
+// ─── PR API ───────────────────────────────────────────────────────
+export const prsApi = {
+  getAll: () =>
+    api.get<PRCurrentItem[]>('/api/prs'),
+
+  getHistory: (exerciseId: string) =>
+    api.get<{ id: string; estimated_1rm: number; weight_kg: number; reps: number; achieved_at: string }[]>(
+      `/api/prs/${exerciseId}`
+    ),
+};
 
 // List endpoint returns a lighter object (no exercises array)
 export interface WorkoutListItem {

@@ -16,6 +16,7 @@ from .gamification import (
 )
 from .ml import MlPrediction, CoachMessage
 from .nutrition import FoodItem, NutritionLog, UserNutritionGoals
+from .personal_records import PersonalRecord, PersonalRecordHistory
 
 # Можно (опционально) определить __all__ для явного экспорта
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "UserMission", "SkillTreeNode", "UserSkillTree", "Achievement", "UserAchievement",
     "MlPrediction", "CoachMessage",
     "FoodItem", "NutritionLog", "UserNutritionGoals",
+    "PersonalRecord", "PersonalRecordHistory",
 ]

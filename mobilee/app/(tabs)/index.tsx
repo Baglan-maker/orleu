@@ -19,6 +19,7 @@ import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
 import { StageUpModal }          from '../../components/modals/StageUpModal';
 import { AchievementModal, type AchievementEarned } from '../../components/modals/AchievementModal';
+import { PRModal, type PRResult } from '../../components/modals/PRModal';
 import { SyncStatusIndicator }   from '../../components/SyncStatusIndicator';
 import {
   useWorkoutStore,
@@ -118,6 +119,8 @@ export default function WorkoutScreen() {
   const [achModalVisible,      setAchModalVisible]      = useState(false);
   const [newAchievements,      setNewAchievements]      = useState<AchievementEarned[]>([]);
   const [pendingAchievements,  setPendingAchievements]  = useState<AchievementEarned[]>([]);
+  const [prModalVisible,       setPrModalVisible]       = useState(false);
+  const [newPRs,               setNewPRs]               = useState<PRResult[]>([]);
 
   const totalReps    = selectTotalReps(exercises);
   const totalVolume  = selectTotalVolume(exercises);
@@ -188,6 +191,13 @@ export default function WorkoutScreen() {
     if (result) {
       setIsCelebrating(true);
       setTimeout(() => setIsCelebrating(false), 1000);
+
+      // Show PR modal if new personal records were set
+      const prs = result.new_prs ?? [];
+      if (prs.length > 0) {
+        setNewPRs(prs);
+        setPrModalVisible(true);
+      }
 
       // Capture new achievements from response
       const earned = result.achievements ?? [];
@@ -448,6 +458,12 @@ export default function WorkoutScreen() {
           setAchModalVisible(false);
           setNewAchievements([]);
         }}
+      />
+
+      <PRModal
+        prs={newPRs}
+        visible={prModalVisible}
+        onClose={() => { setPrModalVisible(false); setNewPRs([]); }}
       />
     </SafeAreaView>
   );

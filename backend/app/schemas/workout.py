@@ -51,6 +51,16 @@ class AchievementEarned(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PROut(BaseModel):
+    exercise_id:     UUID
+    exercise_name:   str
+    new_1rm:         float
+    previous_1rm:    Optional[float] = None
+    improvement_pct: Optional[float] = None
+    weight_kg:       float
+    reps:            int
+
+
 class WorkoutOut(BaseModel):
     id:               UUID
     user_id:          UUID
@@ -64,6 +74,7 @@ class WorkoutOut(BaseModel):
     new_level:        Optional[int] = None
     leveled_up:       bool = False
     achievements:     List[AchievementEarned] = []
+    new_prs:          List[PROut] = []
     created_at:       datetime
     updated_at:       datetime
 

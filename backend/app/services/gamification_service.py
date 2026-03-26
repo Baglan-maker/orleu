@@ -10,7 +10,8 @@ Entry points:
 from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,8 +19,120 @@ from sqlalchemy.orm import Session
 from app.models import (
     UserProgress, Campaign, CampaignChapter,
     Achievement, UserAchievement,
+    PersonalRecord, PersonalRecordHistory,
 )
 from app.models.workout import Workout, WorkoutExercise, ExerciseLibrary
+
+
+# ── PR tracking ───────────────────────────────────────────────────────────────
+
+@dataclass
+class PRResult:
+    exercise_id:     UUID
+    exercise_name:   str
+    new_1rm:         float
+    previous_1rm:    Optional[float]
+    improvement_pct: Optional[float]
+    weight_kg:       float
+    reps:            int
+
+
+def _epley(weight_kg: float, reps: int) -> float:
+    if reps > 12:
+        return weight_kg
+    return round(weight_kg * (1 + reps / 30), 2)
+
+
+def check_and_update_prs(
+    user_id: UUID,
+    workout_exercises: list[WorkoutExercise],
+    db: Session,
+) -> list[PRResult]:
+    """
+    For each exercise in the workout, compute the estimated 1RM via Epley
+    and update personal_records + personal_record_history if a new PR is set.
+    Returns a list of PRResult for every newly set record.
+    """
+    results: list[PRResult] = []
+    now = datetime.now(timezone.utc)
+
+    for we in workout_exercises:
+        if we.weight_kg is None or we.weight_kg <= 0 or we.reps < 1:
+            continue
+
+        current_1rm = _epley(we.weight_kg, we.reps)
+        exercise_name = we.exercise.name if we.exercise else "Unknown"
+
+        existing = (
+            db.query(PersonalRecord)
+            .filter_by(user_id=user_id, exercise_id=we.exercise_id)
+            .first()
+        )
+
+        if existing is None:
+            db.add(PersonalRecord(
+                user_id=user_id,
+                exercise_id=we.exercise_id,
+                estimated_1rm=current_1rm,
+                weight_kg=we.weight_kg,
+                reps=we.reps,
+                sets=we.sets,
+                achieved_at=now,
+                previous_1rm=None,
+                improvement_pct=None,
+            ))
+            db.add(PersonalRecordHistory(
+                user_id=user_id,
+                exercise_id=we.exercise_id,
+                estimated_1rm=current_1rm,
+                weight_kg=we.weight_kg,
+                reps=we.reps,
+                achieved_at=now,
+            ))
+            results.append(PRResult(
+                exercise_id=we.exercise_id,
+                exercise_name=exercise_name,
+                new_1rm=current_1rm,
+                previous_1rm=None,
+                improvement_pct=None,
+                weight_kg=we.weight_kg,
+                reps=we.reps,
+            ))
+
+        elif current_1rm > existing.estimated_1rm:
+            previous_1rm = existing.estimated_1rm
+            improvement_pct = round(
+                (current_1rm - previous_1rm) / previous_1rm * 100, 1
+            )
+            existing.estimated_1rm  = current_1rm
+            existing.weight_kg      = we.weight_kg
+            existing.reps           = we.reps
+            existing.sets           = we.sets
+            existing.achieved_at    = now
+            existing.previous_1rm   = previous_1rm
+            existing.improvement_pct = improvement_pct
+            db.add(PersonalRecordHistory(
+                user_id=user_id,
+                exercise_id=we.exercise_id,
+                estimated_1rm=current_1rm,
+                weight_kg=we.weight_kg,
+                reps=we.reps,
+                achieved_at=now,
+            ))
+            results.append(PRResult(
+                exercise_id=we.exercise_id,
+                exercise_name=exercise_name,
+                new_1rm=current_1rm,
+                previous_1rm=previous_1rm,
+                improvement_pct=improvement_pct,
+                weight_kg=we.weight_kg,
+                reps=we.reps,
+            ))
+
+    if results:
+        db.flush()
+
+    return results
 
 
 # ── Reward tables ─────────────────────────────────────────────────────────────

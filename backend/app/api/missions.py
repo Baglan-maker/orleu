@@ -19,7 +19,9 @@ router = APIRouter()
 
 def _to_user_mission_out(um: UserMission) -> UserMissionOut:
     tmpl = um.template
-    desc = tmpl.description_template.replace("{target}", str(int(um.adjusted_target)))
+    # Use base_target in the description text so it matches what was shown on the selection card.
+    # adjusted_target (level-scaled) is used only for progress math, not the display label.
+    desc = tmpl.description_template.replace("{target}", str(int(tmpl.base_target)))
     return UserMissionOut(
         id=um.id,
         mission_template_id=um.mission_template_id,
