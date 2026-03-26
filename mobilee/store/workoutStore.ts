@@ -76,7 +76,8 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   // 4. Если успех → markWorkoutSynced
   // 5. Если ошибка API → остаётся в SQLite как pending
   submitWorkout: async () => {
-    const { exercises, notes, startedAt } = get();
+    const { exercises, notes, startedAt, submitStatus } = get();
+    if (submitStatus === 'loading' || submitStatus === 'success') return null;
     if (exercises.length === 0) return null;
 
     set({ submitStatus: 'loading', error: null });

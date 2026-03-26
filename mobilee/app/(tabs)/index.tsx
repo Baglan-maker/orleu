@@ -240,7 +240,7 @@ export default function WorkoutScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} pointerEvents={isLoading ? 'none' : 'auto'}>
 
         {/* ── Header ── */}
         <View style={s.header}>
@@ -395,7 +395,7 @@ export default function WorkoutScreen() {
           <Button
             label={isSuccess ? 'Session saved!' : isLoading ? 'Saving...' : 'Finish & log session'}
             onPress={finishWorkout}
-            disabled={!hasExercises || isLoading}
+            disabled={!hasExercises || isLoading || isSuccess}
           />
           {!hasExercises && (
             <Text style={s.hintText}>Add at least one exercise to log</Text>
