@@ -46,16 +46,16 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
         + int(total_volume / 1000) * XP_PER_1000KG_VOL
     )
 
-    # Update streak — doc: increment if last workout was yesterday or today, reset otherwise
+    # Update streak — grace period: streak survives up to 2 rest days, resets on 3+
     now = datetime.now(timezone.utc)
     if progress.last_workout_at:
         days_gap = (now.date() - progress.last_workout_at.date()).days
         if days_gap == 0:
             pass  # same day — streak unchanged
-        elif days_gap == 1:
-            progress.current_streak += 1  # consecutive day
+        elif days_gap <= 2:
+            progress.current_streak += 1  # within grace period — keep streak
         else:
-            progress.current_streak = 1  # gap > 1 day — reset
+            progress.current_streak = 1  # gap >= 3 days — reset
     else:
         progress.current_streak = 1
 
@@ -451,15 +451,16 @@ def delete_workout(
                 tzinfo=timezone.utc,
             )
             # Recalculate current streak from most recent workout backward
+            # Grace period: gap <= 2 days keeps the streak alive
             streak = 1
             for i in range(len(remaining_workouts) - 1):
                 gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
-                if 0 < gap <= 1:
+                if 0 < gap <= 2:
                     streak += 1
                 elif gap == 0:
                     continue  # same day — don't count twice
                 else:
-                    break
+                    break  # gap >= 3 days — streak broken
             progress.current_streak = streak
 
             # Recalculate longest_streak from full workout history
@@ -467,7 +468,7 @@ def delete_workout(
             run = 1
             for i in range(len(remaining_workouts) - 1):
                 gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
-                if 0 < gap <= 1:
+                if 0 < gap <= 2:
                     run += 1
                     max_streak = max(max_streak, run)
                 elif gap == 0:
