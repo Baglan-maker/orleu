@@ -6,8 +6,9 @@
  * 3. Синкаем exercise library при первом входе
  * 4. Редиректим: onboarding → (tabs) | (auth)
  */
-import { useEffect } from 'react';
-import { View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AppState, View } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -33,6 +34,7 @@ import {
 
 import { useAuthStore }         from '../store/authStore';
 import { syncExerciseLibrary }  from '../services/exerciseSync';
+import { syncPendingWorkouts }  from '../services/syncWorker';
 import { Colors }               from '../constants/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -71,6 +73,23 @@ export default function RootLayout() {
     if (isLoggedIn) {
       syncExerciseLibrary().catch(() => {});
     }
+  }, [isLoggedIn]);
+
+  // Sync pending offline workouts when app comes to foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    // Sync immediately on mount (app just opened while logged in)
+    syncPendingWorkouts();
+
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        syncPendingWorkouts();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, [isLoggedIn]);
 
   // ── Auth guard ─────────────────────────────────────────────────

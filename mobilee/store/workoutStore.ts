@@ -142,9 +142,24 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
       set({ submitStatus: 'success' });
       setTimeout(() => get().resetSession(), 1500);
+
+      // Clear any older backlog while we have connectivity
+      get().syncPending();
+
       return data;
     } catch (err: any) {
-      const msg = err?.response?.data?.detail ?? 'Workout saved offline. Will sync when connected.';
+      const isOffline =
+        !err.response || err.code === 'ERR_NETWORK' || err.message === 'Network Error';
+
+      if (isOffline) {
+        // Already saved locally in step 1 — treat as success
+        set({ submitStatus: 'success', error: null });
+        setTimeout(() => get().resetSession(), 1500);
+        return null;
+      }
+
+      // Real server error
+      const msg = err.response?.data?.detail ?? 'Failed to save workout.';
       set({ submitStatus: 'error', error: msg });
       return null;
     }

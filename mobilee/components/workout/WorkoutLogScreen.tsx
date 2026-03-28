@@ -64,8 +64,8 @@ function IClock() {
 
 function IPencil() {
   return (
-    <Svg width={12} height={12} viewBox="0 0 24 24" fill="none"
-      stroke={Colors.t3} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+      stroke={Colors.bone} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
       <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
     </Svg>
@@ -213,7 +213,11 @@ function RestTimerWidget({
             <Text style={rt.durationTxt}>
               {durMin}м {String(durSec).padStart(2, '0')}с
             </Text>
-            {enabled && !running && <IPencil/>}
+            {enabled && !running && (
+              <View style={rt.editIconBox}>
+                <IPencil/>
+              </View>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -233,7 +237,10 @@ function RestTimerWidget({
 
         {/* Done indicator */}
         {enabled && !running && remaining === 0 && (
-          <Text style={rt.readyTxt}>Ready</Text>
+          <View style={rt.readyBadge}>
+            <ICheck/>
+            <Text style={rt.readyTxt}>Rested</Text>
+          </View>
         )}
 
         <Switch
@@ -279,12 +286,24 @@ const rt = StyleSheet.create({
   durationRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           4,
+    gap:           8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   durationTxt: {
     fontSize:   13,
     fontFamily: Fonts.monoBold,
     color:      Colors.t1,
+  },
+  editIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.crLo,
+    borderWidth: 1,
+    borderColor: Colors.crBdr,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   editRow: {
     flexDirection: 'row',
@@ -325,8 +344,19 @@ const rt = StyleSheet.create({
     marginTop:  1,
     textAlign:  'center',
   },
+  readyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(107,158,107,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(107,158,107,0.3)',
+    borderRadius: Radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
   readyTxt: {
-    fontSize:   11,
+    fontSize:   12,
     fontFamily: Fonts.semiBold,
     color:      Colors.up,
   },
