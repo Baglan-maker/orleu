@@ -7,6 +7,9 @@ from sqlalchemy.sql import func
 from app.db.database import Base
 from app.models.core import uuid_pk, now_utc
 
+# sets_data JSON column is stored as TEXT in PG as well, but we use the
+# generic Text type so it works with SQLite in tests too.
+
 class ExerciseLibrary(Base):
     __tablename__ = "exercise_library"
 
@@ -45,9 +48,10 @@ class WorkoutExercise(Base):
     id          = uuid_pk()
     workout_id  = Column(UUID(as_uuid=True), ForeignKey("workouts.id",  ondelete="CASCADE"), nullable=False, index=True)
     exercise_id = Column(UUID(as_uuid=True), ForeignKey("exercise_library.id"), nullable=False, index=True)
-    sets        = Column(Integer, nullable=False)
-    reps        = Column(Integer, nullable=False)
-    weight_kg   = Column(Float,   nullable=False, default=0.0)
+    sets        = Column(Integer, nullable=False)          # computed: len(sets_data)
+    reps        = Column(Integer, nullable=False)          # computed: max reps across sets
+    weight_kg   = Column(Float,   nullable=False, default=0.0)  # computed: max weight across sets
+    sets_data   = Column(Text,    nullable=True)           # JSON: [{set_number, reps, weight_kg}, ...]
     notes       = Column(Text)
     order_index = Column(Integer, default=0)
 

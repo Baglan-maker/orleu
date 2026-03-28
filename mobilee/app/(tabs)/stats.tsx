@@ -356,27 +356,27 @@ export default function StatsScreen() {
               <IChevron rotated={prExpanded} />
             </TouchableOpacity>
 
-            {(prExpanded ? prs : prs.slice(0, 5)).map((pr, i) => {
-              const d = new Date(pr.achieved_at);
-              const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
-              return (
-                <View key={pr.exercise_id} style={[s.prRow, i > 0 && s.prRowBorder]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
-                    <Text style={s.prDate}>{pr.muscle_group} · {dateStr}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={s.prLift}>{pr.weight_kg} kg × {pr.reps}</Text>
-                    <Text style={s.pr1rm}>{pr.estimated_1rm.toFixed(1)} kg 1RM</Text>
-                  </View>
-                </View>
-              );
-            })}
-
-            {!prExpanded && prs.length > 5 && (
-              <TouchableOpacity onPress={() => setPrExpanded(true)} style={s.viewAllBtn} activeOpacity={0.7}>
-                <Text style={s.viewAllText}>View all {prs.length} records</Text>
-              </TouchableOpacity>
+            {prExpanded && (
+              /* Scrollable list when expanded — max visible height = 3 rows */
+              <ScrollView
+                style={s.prScrollArea}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+              >
+                {prs.map((pr, i) => {
+                  const d = new Date(pr.achieved_at);
+                  const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+                  return (
+                    <View key={pr.exercise_id} style={[s.prRow, i > 0 && s.prRowBorder]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
+                        <Text style={s.prDate}>{pr.muscle_group} · {dateStr}</Text>
+                      </View>
+                      <Text style={s.prLift}>{pr.weight_kg} kg</Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
             )}
           </Card>
         )}
@@ -504,12 +504,10 @@ const s = StyleSheet.create({
   achLabel:      { fontSize: 9, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', width: 56, lineHeight: 13 },
 
   // ── Personal Records ────────────────────────────────────────────
-  prRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  prRowBorder: { borderTopWidth: 1, borderTopColor: Colors.line },
-  prName:      { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, marginBottom: 2 },
-  prDate:      { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
-  prLift:      { fontSize: 14, fontFamily: Fonts.monoBold, color: Colors.bone },
-  pr1rm:       { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
-  viewAllBtn:  { paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.line, alignItems: 'center' },
-  viewAllText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr },
+  prScrollArea: { maxHeight: 3 * 56 },  // 3 rows × row height (56px each)
+  prRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, minHeight: 56 },
+  prRowBorder:  { borderTopWidth: 1, borderTopColor: Colors.line },
+  prName:       { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, marginBottom: 2 },
+  prDate:       { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  prLift:       { fontSize: 14, fontFamily: Fonts.monoBold, color: Colors.bone },
 });

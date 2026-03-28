@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from uuid import UUID
+from pydantic import BaseModel
+from datetime import datetime
 
 from app.db.database import get_db
 from app.models import User, PersonalRecord, PersonalRecordHistory
@@ -12,44 +14,31 @@ from app.services.dependencies import get_current_user
 router = APIRouter()
 
 
-# ── Response models (inline Pydantic) ─────────────────────────────────────────
-from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
-
-
 class PRCurrentOut(BaseModel):
-    exercise_id:     UUID
-    exercise_name:   str
-    muscle_group:    str
-    estimated_1rm:   float
-    weight_kg:       float
-    reps:            int
-    achieved_at:     datetime
-    improvement_pct: Optional[float] = None
-    total_pr_count:  int
+    exercise_id:    UUID
+    exercise_name:  str
+    muscle_group:   str
+    weight_kg:      float
+    achieved_at:    datetime
+    total_pr_count: int   # how many times a new record was set on this exercise
 
     model_config = {"from_attributes": True}
 
 
 class PRHistoryEntry(BaseModel):
-    id:            UUID
-    estimated_1rm: float
-    weight_kg:     float
-    reps:          int
-    achieved_at:   datetime
+    id:          UUID
+    weight_kg:   float
+    achieved_at: datetime
 
     model_config = {"from_attributes": True}
 
-
-# ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[PRCurrentOut])
 def get_all_prs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return current best PR for every exercise the user has lifted."""
+    """Return current best weight PR for every exercise the user has lifted."""
     rows = (
         db.query(PersonalRecord)
         .filter(PersonalRecord.user_id == current_user.id)
@@ -57,7 +46,6 @@ def get_all_prs(
         .all()
     )
 
-    # Count history entries per exercise in one query
     counts = dict(
         db.query(
             PersonalRecordHistory.exercise_id,
@@ -75,14 +63,26 @@ def get_all_prs(
             exercise_id=pr.exercise_id,
             exercise_name=ex.name if ex else "Unknown",
             muscle_group=ex.muscle_group if ex else "",
-            estimated_1rm=pr.estimated_1rm,
             weight_kg=pr.weight_kg,
-            reps=pr.reps,
             achieved_at=pr.achieved_at,
-            improvement_pct=pr.improvement_pct,
-            total_pr_count=counts.get(pr.exercise_id, 1),
+            total_pr_count=counts.get(pr.exercise_id, 0),
         ))
     return result
+
+
+@router.delete("/reset", status_code=204)
+def reset_prs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete all personal records and history for the current user."""
+    db.query(PersonalRecordHistory).filter(
+        PersonalRecordHistory.user_id == current_user.id
+    ).delete(synchronize_session=False)
+    db.query(PersonalRecord).filter(
+        PersonalRecord.user_id == current_user.id
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
 @router.get("/{exercise_id}", response_model=list[PRHistoryEntry])
@@ -102,12 +102,6 @@ def get_pr_history(
         .all()
     )
     return [
-        PRHistoryEntry(
-            id=r.id,
-            estimated_1rm=r.estimated_1rm,
-            weight_kg=r.weight_kg,
-            reps=r.reps,
-            achieved_at=r.achieved_at,
-        )
+        PRHistoryEntry(id=r.id, weight_kg=r.weight_kg, achieved_at=r.achieved_at)
         for r in rows
     ]

@@ -43,7 +43,13 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       sets             INTEGER NOT NULL DEFAULT 1,
       reps             INTEGER NOT NULL DEFAULT 1,
       weight_kg        REAL NOT NULL DEFAULT 0,
+      sets_data        TEXT,
       order_index      INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Migrate existing table: add sets_data if missing (idempotent)
+    CREATE TABLE IF NOT EXISTS _schema_migrations (
+      key TEXT PRIMARY KEY
     );
 
     CREATE TABLE IF NOT EXISTS app_meta (
@@ -62,6 +68,15 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     );
   `);
 
+  // Migrate existing installs: add sets_data column if absent
+  try {
+    await _db.execAsync(
+      `ALTER TABLE workout_exercises_local ADD COLUMN sets_data TEXT`
+    );
+  } catch {
+    // Column already exists — ignore
+  }
+
   return _db;
 }
 
@@ -74,12 +89,19 @@ export interface CachedExercise {
   is_custom:    number;
 }
 
+export interface SetEntry {
+  set_number: number;
+  reps:       number;
+  weight_kg:  number;
+}
+
 export interface LocalWorkoutExercise {
   exercise_id: string;
   name:        string;
   sets:        number;
   reps:        number;
   weight_kg:   number;
+  sets_data:   SetEntry[] | null;
   order_index: number;
 }
 
@@ -164,8 +186,8 @@ export async function saveWorkoutLocal(workout: LocalWorkout): Promise<void> {
       const exRowId = `${workout.id}_${ex.order_index}`;
       await db.runAsync(
         `INSERT OR REPLACE INTO workout_exercises_local
-           (id, workout_local_id, exercise_id, name, sets, reps, weight_kg, order_index)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, workout_local_id, exercise_id, name, sets, reps, weight_kg, sets_data, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           exRowId,
           workout.id,
@@ -174,6 +196,7 @@ export async function saveWorkoutLocal(workout: LocalWorkout): Promise<void> {
           ex.sets,
           ex.reps,
           ex.weight_kg,
+          ex.sets_data ? JSON.stringify(ex.sets_data) : null,
           ex.order_index,
         ]
       );
@@ -193,12 +216,42 @@ export async function markWorkoutSynced(localId: string): Promise<void> {
   await db.runAsync('UPDATE workouts_local SET synced = 1 WHERE id = ?', [localId]);
 }
 
+interface RawLocalExercise {
+  exercise_id: string;
+  name:        string;
+  sets:        number;
+  reps:        number;
+  weight_kg:   number;
+  sets_data:   string | null;
+  order_index: number;
+}
+
 export async function getExercisesForWorkout(workoutLocalId: string): Promise<LocalWorkoutExercise[]> {
   const db = await getDb();
-  return db.getAllAsync<LocalWorkoutExercise>(
-    'SELECT exercise_id, name, sets, reps, weight_kg, order_index FROM workout_exercises_local WHERE workout_local_id = ? ORDER BY order_index ASC',
+  const rows = await db.getAllAsync<RawLocalExercise>(
+    'SELECT exercise_id, name, sets, reps, weight_kg, sets_data, order_index FROM workout_exercises_local WHERE workout_local_id = ? ORDER BY order_index ASC',
     [workoutLocalId]
   );
+  return rows.map(r => ({
+    ...r,
+    sets_data: r.sets_data ? JSON.parse(r.sets_data) as SetEntry[] : null,
+  }));
+}
+
+/** Returns the sets_data from the most recent logged session for this exercise. */
+export async function getLastSessionSetsData(exerciseId: string): Promise<SetEntry[] | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ sets_data: string | null }>(
+    `SELECT wel.sets_data
+     FROM workout_exercises_local wel
+     JOIN workouts_local wl ON wl.id = wel.workout_local_id
+     WHERE wel.exercise_id = ?
+     ORDER BY wl.created_at DESC
+     LIMIT 1`,
+    [exerciseId]
+  );
+  if (!row?.sets_data) return null;
+  return JSON.parse(row.sets_data) as SetEntry[];
 }
 
 export async function getPendingCount(): Promise<number> {

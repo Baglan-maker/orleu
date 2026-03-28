@@ -36,17 +36,10 @@ export interface ExerciseItem {
   category:     string;
   is_custom?:   boolean;
 }
-export interface SetData {
-  exercise: ExerciseItem;
-  sets:     number;
-  reps:     number;
-  weight:   number;
-}
-
 interface Props {
   visible:  boolean;
   onClose:  () => void;
-  onAdd:    (data: SetData) => void;
+  onAdd:    (exercise: ExerciseItem) => void;
 }
 
 // ─── Fallback list (когда кэш пустой / нет сети) ──────────────────
@@ -84,10 +77,6 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   const [useFallback,    setUseFallback]    = useState(false);
   const [fallbackAlert,  setFallbackAlert]  = useState(false);
 
-  const [selected, setSelected] = useState<ExerciseItem | null>(null);
-  const [sets,     setSets]     = useState('3');
-  const [reps,     setReps]     = useState('10');
-  const [weight,   setWeight]   = useState('0');
 
   const [showCustom,     setShowCustom]     = useState(false);
   const [customError,    setCustomError]    = useState<string | null>(null);
@@ -168,23 +157,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   }, [query, filter, visible, runSearch]);
 
   function selectExercise(ex: ExerciseItem) {
-    // Fallback exercises have fake short IDs — they will fail on the backend
     if (useFallback) {
       setFallbackAlert(true);
       return;
     }
-    setSelected(ex);
-    setShowCustom(false);
-  }
-
-  function handleAdd() {
-    if (!selected) return;
-    onAdd({
-      exercise: selected,
-      sets:   parseInt(sets)     || 3,
-      reps:   parseInt(reps)     || 10,
-      weight: parseFloat(weight) || 0,
-    });
+    onAdd(ex);
     reset();
     onClose();
   }
@@ -225,8 +202,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
 
   function reset() {
     setQuery(''); setFilter('All');
-    setSelected(null); setShowCustom(false);
-    setSets('3'); setReps('10'); setWeight('0');
+    setShowCustom(false);
     setCustomName(''); setCustomMuscle('Chest');
     setCustomError(null); setFallbackAlert(false);
     setResults([]);
@@ -243,61 +219,13 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         <View style={s.handle}/>
 
         <View style={s.topBar}>
-          <Text style={s.title}>
-            {selected ? selected.name : 'Add Exercise'}
-          </Text>
+          <Text style={s.title}>Add Exercise</Text>
           <TouchableOpacity onPress={handleClose} style={s.closeBtn}>
             <IClose/>
           </TouchableOpacity>
         </View>
 
-        {/* ══ STATE: Exercise selected → Set entry ══ */}
-        {selected ? (
-          <ScrollView contentContainerStyle={s.setEntry} keyboardShouldPersistTaps="handled">
-            <View style={s.exPill}>
-              <View style={s.exPillDot}><IDumbbell/></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.exPillName}>{selected.name}</Text>
-                <Text style={s.exPillMuscle}>{selected.muscle_group}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setSelected(null)}>
-                <Text style={{ fontSize: 12, color: Colors.cr }}>Change</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[s.sectionLbl, { marginBottom: 12 }]}>SET DETAILS</Text>
-            <View style={s.setRow}>
-              {[
-                { label: 'SETS',  val: sets,   setter: setSets   },
-                { label: 'REPS',  val: reps,   setter: setReps   },
-                { label: 'KG',    val: weight,  setter: setWeight },
-              ].map(f => (
-                <View key={f.label} style={{ flex: 1 }}>
-                  <Text style={s.setFieldLbl}>{f.label}</Text>
-                  <TextInput
-                    style={s.setInput}
-                    keyboardType="numeric"
-                    value={f.val}
-                    onChangeText={f.setter}
-                    selectTextOnFocus
-                  />
-                </View>
-              ))}
-            </View>
-
-            <View style={s.summary}>
-              <Text style={s.summaryText}>
-                {parseInt(sets)||0} × {parseInt(reps)||0} reps @ {parseFloat(weight)||0} kg
-              </Text>
-              <Text style={s.summaryVol}>
-                {Math.round((parseInt(sets)||0)*(parseInt(reps)||0)*(parseFloat(weight)||0))} kg total volume
-              </Text>
-            </View>
-
-            <Button label="Add to workout" onPress={handleAdd} style={{ marginTop: 8 }}/>
-          </ScrollView>
-
-        ) : showCustom ? (
+        {showCustom ? (
           /* ══ STATE: Create custom exercise ══ */
           <ScrollView contentContainerStyle={s.setEntry} keyboardShouldPersistTaps="handled">
             <Text style={[s.sectionLbl, { marginBottom: 12 }]}>CREATE CUSTOM</Text>

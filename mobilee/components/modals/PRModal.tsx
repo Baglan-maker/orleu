@@ -1,21 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, Fonts, Radius } from '../../constants/theme';
+import Svg, { Path, Polyline } from 'react-native-svg';
 
 export interface PRResult {
-  exercise_id:     string;
-  exercise_name:   string;
-  new_1rm:         number;
-  previous_1rm:    number | null;
-  improvement_pct: number | null;
-  weight_kg:       number;
-  reps:            number;
+  exercise_id:   string;
+  exercise_name: string;
+  new_weight:    number;
+  prev_weight:   number;
+  delta:         number;
 }
 
 interface Props {
   prs:     PRResult[];
   visible: boolean;
   onClose: () => void;
+}
+
+function TrophyIcon() {
+  return (
+    <Svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M6 9H4a2 2 0 0 1-2-2V5h4"/>
+      <Path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/>
+      <Path d="M12 17v4"/>
+      <Path d="M8 21h8"/>
+      <Path d="M6 3h12v8a6 6 0 0 1-12 0V3z"/>
+    </Svg>
+  );
 }
 
 export function PRModal({ prs, visible, onClose }: Props) {
@@ -53,16 +64,14 @@ export function PRModal({ prs, visible, onClose }: Props) {
 
   if (!current) return null;
 
-  const isFirst = current.improvement_pct === null || current.improvement_pct === undefined;
-
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View style={[s.overlay, { opacity }]}>
         <Animated.View style={[s.card, { transform: [{ scale }] }]}>
-          <Text style={s.label}>NEW PERSONAL RECORD</Text>
+          <Text style={s.label}>WEIGHT RECORD</Text>
 
-          <View style={s.trophyWrap}>
-            <Text style={s.trophyEmoji}>🏆</Text>
+          <View style={s.iconWrap}>
+            <TrophyIcon />
           </View>
 
           {total > 1 && (
@@ -71,22 +80,13 @@ export function PRModal({ prs, visible, onClose }: Props) {
 
           <Text style={s.exerciseName}>{current.exercise_name}</Text>
 
-          <Text style={s.lift}>
-            {current.weight_kg} kg × {current.reps}
-          </Text>
+          <Text style={s.weight}>{current.new_weight} kg</Text>
 
-          {isFirst ? (
-            <Text style={s.firstRecord}>First record on this exercise!</Text>
-          ) : (
-            <View style={s.improvementWrap}>
-              <Text style={s.improvementPct}>
-                +{current.improvement_pct}% estimated 1RM
-              </Text>
-              <Text style={s.previousVal}>
-                Previous: {current.previous_1rm?.toFixed(1)} kg 1RM
-              </Text>
-            </View>
-          )}
+          <View style={s.deltaRow}>
+            <Text style={s.deltaText}>
+              +{current.delta} kg from previous best
+            </Text>
+          </View>
 
           <TouchableOpacity style={s.btn} onPress={handleNext} activeOpacity={0.8}>
             <Text style={s.btnText}>
@@ -127,7 +127,7 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 20,
   },
-  trophyWrap: {
+  iconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
@@ -137,9 +137,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
-  },
-  trophyEmoji: {
-    fontSize: 32,
   },
   counter: {
     fontSize: 11,
@@ -152,35 +149,21 @@ const s = StyleSheet.create({
     fontFamily: Fonts.displayBold,
     color: Colors.bone,
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  lift: {
-    fontSize: 28,
+  weight: {
+    fontSize: 36,
     fontFamily: Fonts.monoBold,
     color: Colors.bone,
-    marginBottom: 14,
+    marginBottom: 10,
   },
-  firstRecord: {
-    fontSize: 14,
-    fontFamily: Fonts.regular,
-    color: Colors.t2,
-    textAlign: 'center',
-    marginBottom: 24,
+  deltaRow: {
+    marginBottom: 28,
   },
-  improvementWrap: {
-    alignItems: 'center',
-    marginBottom: 24,
-    gap: 4,
-  },
-  improvementPct: {
+  deltaText: {
     fontSize: 14,
     fontFamily: Fonts.bold,
     color: Colors.up,
-  },
-  previousVal: {
-    fontSize: 12,
-    fontFamily: Fonts.regular,
-    color: Colors.t2,
   },
   btn: {
     backgroundColor: Colors.cr,

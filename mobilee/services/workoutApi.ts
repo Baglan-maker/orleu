@@ -15,12 +15,21 @@ export interface ExerciseResponse {
   is_custom:    boolean;
 }
 
+export interface SetEntry {
+  set_number: number;
+  reps:       number;
+  weight_kg:  number;
+}
+
 export interface WorkoutExercisePayload {
   exercise_id: string;
-  sets:        number;
-  reps:        number;
-  weight_kg:   number;
   order_index: number;
+  // Per-set format (preferred)
+  sets_data?:  SetEntry[];
+  // Legacy flat format (backward compat)
+  sets?:       number;
+  reps?:       number;
+  weight_kg?:  number;
 }
 
 export interface CreateWorkoutPayload {
@@ -38,6 +47,7 @@ export interface WorkoutExerciseResponse {
   sets:          number;
   reps:          number;
   weight_kg:     number;
+  sets_data:     SetEntry[] | null;
   notes:         string | null;
   order_index:   number;
   total_volume:  number;
@@ -51,13 +61,11 @@ export interface AchievementEarned {
 }
 
 export interface PRResult {
-  exercise_id:     string;
-  exercise_name:   string;
-  new_1rm:         number;
-  previous_1rm:    number | null;
-  improvement_pct: number | null;
-  weight_kg:       number;
-  reps:            number;
+  exercise_id:   string;
+  exercise_name: string;
+  new_weight:    number;
+  prev_weight:   number;
+  delta:         number;
 }
 
 export interface WorkoutResponse {
@@ -79,15 +87,12 @@ export interface WorkoutResponse {
 }
 
 export interface PRCurrentItem {
-  exercise_id:     string;
-  exercise_name:   string;
-  muscle_group:    string;
-  estimated_1rm:   number;
-  weight_kg:       number;
-  reps:            number;
-  achieved_at:     string;
-  improvement_pct: number | null;
-  total_pr_count:  number;
+  exercise_id:    string;
+  exercise_name:  string;
+  muscle_group:   string;
+  weight_kg:      number;
+  achieved_at:    string;
+  total_pr_count: number;
 }
 
 // ─── PR API ───────────────────────────────────────────────────────
@@ -96,7 +101,7 @@ export const prsApi = {
     api.get<PRCurrentItem[]>('/api/prs'),
 
   getHistory: (exerciseId: string) =>
-    api.get<{ id: string; estimated_1rm: number; weight_kg: number; reps: number; achieved_at: string }[]>(
+    api.get<{ id: string; weight_kg: number; achieved_at: string }[]>(
       `/api/prs/${exerciseId}`
     ),
 };

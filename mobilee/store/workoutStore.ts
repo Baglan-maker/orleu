@@ -1,21 +1,23 @@
 // mobile/store/workoutStore.ts
-/**
- * Zustand store для тренировки.
- * Офлайн-first: сначала пишем в SQLite, потом синкаем с API.
- */
 import { create } from 'zustand';
 import { workoutApi, WorkoutResponse } from '../services/workoutApi';
-import { saveWorkoutLocal, markWorkoutSynced, getPendingWorkouts, getExercisesForWorkout } from '../services/database';
+import {
+  saveWorkoutLocal,
+  markWorkoutSynced,
+  getPendingWorkouts,
+  getExercisesForWorkout,
+  type SetEntry,
+} from '../services/database';
 
 // ─── Типы ────────────────────────────────────────────────────────
+export type { SetEntry };
+
 export interface WorkoutExercise {
   localId:    string;
   exerciseId: string;
   name:       string;
   muscle:     string;
-  sets:       number;
-  reps:       number;
-  weight:     number;
+  setsData:   SetEntry[];
 }
 
 export type SubmitStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -26,17 +28,28 @@ interface WorkoutState {
   startedAt:    Date | null;
   submitStatus: SubmitStatus;
   error:        string | null;
-  pendingCount: number;   // кол-во несинкнутых тренировок
+  pendingCount: number;
 
   addExercise:    (ex: Omit<WorkoutExercise, 'localId'>) => void;
   removeExercise: (localId: string) => void;
-  updateExercise: (localId: string, patch: Partial<WorkoutExercise>) => void;
+  updateSetsData: (localId: string, setsData: SetEntry[]) => void;
   setNotes:       (notes: string) => void;
   startSession:   () => void;
   resetSession:   () => void;
   submitWorkout:  () => Promise<WorkoutResponse | null>;
   syncPending:    () => Promise<void>;
   loadPendingCount: () => Promise<void>;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function computedSets(sd: SetEntry[]) {
+  return sd.length;
+}
+function computedMaxReps(sd: SetEntry[]) {
+  return sd.reduce((a, s) => Math.max(a, s.reps), 1);
+}
+function computedMaxWeight(sd: SetEntry[]) {
+  return sd.reduce((a, s) => Math.max(a, s.weight_kg), 0);
 }
 
 // ─── Store ───────────────────────────────────────────────────────
@@ -57,9 +70,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   removeExercise: (localId) =>
     set(s => ({ exercises: s.exercises.filter(e => e.localId !== localId) })),
 
-  updateExercise: (localId, patch) =>
+  updateSetsData: (localId, setsData) =>
     set(s => ({
-      exercises: s.exercises.map(e => e.localId === localId ? { ...e, ...patch } : e),
+      exercises: s.exercises.map(e =>
+        e.localId === localId ? { ...e, setsData } : e
+      ),
     })),
 
   setNotes: (notes) => set({ notes }),
@@ -69,12 +84,6 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   resetSession: () =>
     set({ exercises: [], notes: '', startedAt: null, submitStatus: 'idle', error: null }),
 
-  // ── submitWorkout ────────────────────────────────────────────
-  // 1. Генерируем локальный UUID
-  // 2. Сохраняем в SQLite (offline-first)
-  // 3. Пробуем отправить на API
-  // 4. Если успех → markWorkoutSynced
-  // 5. Если ошибка API → остаётся в SQLite как pending
   submitWorkout: async () => {
     const { exercises, notes, startedAt, submitStatus } = get();
     if (submitStatus === 'loading' || submitStatus === 'success') return null;
@@ -89,12 +98,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       : 0;
     const durationMinutes = rawDuration >= 1 ? rawDuration : null;
 
-    const exercisesPayload = exercises.map((ex, i) => ({
+    // Build flat exercise list for local SQLite storage
+    const exercisesForLocal = exercises.map((ex, i) => ({
       exercise_id: ex.exerciseId,
       name:        ex.name,
-      sets:        ex.sets,
-      reps:        ex.reps,
-      weight_kg:   ex.weight,
+      sets:        computedSets(ex.setsData),
+      reps:        computedMaxReps(ex.setsData),
+      weight_kg:   computedMaxWeight(ex.setsData),
+      sets_data:   ex.setsData,
       order_index: i,
     }));
 
@@ -105,7 +116,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
         workout_date:     today,
         duration_minutes: durationMinutes,
         notes:            notes || null,
-        exercises:        exercisesPayload,
+        exercises:        exercisesForLocal,
       });
       set(s => ({ pendingCount: s.pendingCount + 1 }));
     } catch (dbErr) {
@@ -117,7 +128,11 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       workout_date:     today,
       duration_minutes: durationMinutes,
       notes:            notes || null,
-      exercises:        exercisesPayload.map(({ name: _n, ...rest }) => rest),
+      exercises: exercises.map((ex, i) => ({
+        exercise_id: ex.exerciseId,
+        sets_data:   ex.setsData,
+        order_index: i,
+      })),
     };
 
     try {
@@ -131,43 +146,37 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? 'Workout saved offline. Will sync when connected.';
       set({ submitStatus: 'error', error: msg });
-      // Do NOT reset session — workout is pending in SQLite, user data is safe
       return null;
     }
   },
 
-  // ── syncPending ──────────────────────────────────────────────
-  // Отправляет все несинкнутые тренировки из SQLite на сервер
   syncPending: async () => {
     try {
       const pending = await getPendingWorkouts();
       for (const w of pending) {
         try {
           const exercises = await getExercisesForWorkout(w.id);
-          // Skip workouts that contain unsynced fake IDs (fallback or custom offline)
           const hasInvalidId = exercises.some(
             ex => !ex.exercise_id.includes('-') || ex.exercise_id.startsWith('custom_')
           );
-          if (hasInvalidId) {
-            console.warn('[workoutStore] skipping workout with invalid exercise IDs:', w.id);
-            continue;
-          }
+          if (hasInvalidId) continue;
+
           const payload = {
             workout_date:     w.workout_date,
             duration_minutes: w.duration_minutes ?? null,
             notes:            w.notes ?? null,
-            exercises:        exercises.map(ex => ({
+            exercises: exercises.map(ex => ({
               exercise_id: ex.exercise_id,
-              sets:        ex.sets,
-              reps:        ex.reps,
-              weight_kg:   ex.weight_kg,
               order_index: ex.order_index,
+              // Use sets_data if available, otherwise fall back to legacy flat format
+              ...(ex.sets_data
+                ? { sets_data: ex.sets_data }
+                : { sets: ex.sets, reps: ex.reps, weight_kg: ex.weight_kg }),
             })),
           };
           await workoutApi.createWorkout(payload);
           await markWorkoutSynced(w.id).catch(() => {});
         } catch (syncErr) {
-          // Leave as pending — will retry next time
           console.warn('[workoutStore] failed to sync workout', w.id, syncErr);
         }
       }
@@ -190,9 +199,15 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
 
 // ─── Selectors ────────────────────────────────────────────────────
 export function selectTotalReps(exercises: WorkoutExercise[]) {
-  return exercises.reduce((a, e) => a + e.sets * e.reps, 0);
+  return exercises.reduce(
+    (a, e) => a + e.setsData.reduce((b, s) => b + s.reps, 0),
+    0
+  );
 }
 
 export function selectTotalVolume(exercises: WorkoutExercise[]) {
-  return exercises.reduce((a, e) => a + e.sets * e.reps * e.weight, 0);
+  return exercises.reduce(
+    (a, e) => a + e.setsData.reduce((b, s) => b + s.reps * s.weight_kg, 0),
+    0
+  );
 }

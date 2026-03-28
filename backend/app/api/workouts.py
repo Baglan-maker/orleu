@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from typing import List
@@ -8,7 +10,7 @@ from app.db.database import get_db
 from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement
 from app.models.workout import WorkoutExercise
 from app.schemas.workout import (
-    WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
+    WorkoutCreate, WorkoutOut, WorkoutExerciseOut, SetEntry,
     WorkoutListItem, WorkoutListResponse, AchievementEarned, PROut,
 )
 from app.services.dependencies import get_current_user
@@ -30,8 +32,14 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     if not progress:
         return None
 
-    # Calculate XP
-    total_volume = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+    # Calculate XP — use sets_data when available for accurate volume
+    def _exercise_volume(e: WorkoutExercise) -> float:
+        if e.sets_data:
+            rows = json.loads(e.sets_data)
+            return sum(r["reps"] * r["weight_kg"] for r in rows)
+        return e.sets * e.reps * e.weight_kg
+
+    total_volume = sum(_exercise_volume(e) for e in exercises)
     xp_gained = (
         BASE_XP_PER_WORKOUT
         + len(exercises) * XP_PER_EXERCISE
@@ -107,6 +115,14 @@ def _extract_muscle_group(description_template: str) -> str | None:
     return None
 
 
+def _sets_data_reps(e: WorkoutExercise) -> int:
+    """Total reps across all sets, using sets_data when available."""
+    if e.sets_data:
+        rows = json.loads(e.sets_data)
+        return sum(r["reps"] for r in rows)
+    return e.sets * e.reps
+
+
 def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume: float):
     """Update active user missions based on the completed workout."""
     now = datetime.now(timezone.utc)
@@ -129,7 +145,7 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
         if tmpl.type == "workout_count":
             delta = 1
         elif tmpl.type == "total_reps":
-            delta = sum(e.sets * e.reps for e in exercises)
+            delta = sum(_sets_data_reps(e) for e in exercises)
         elif tmpl.type == "total_volume":
             delta = total_volume
         elif tmpl.type == "unique_exercises":
@@ -171,6 +187,20 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _parse_sets_data(we: WorkoutExercise) -> list[SetEntry] | None:
+    if not we.sets_data:
+        return None
+    rows = json.loads(we.sets_data)
+    return [SetEntry(**r) for r in rows]
+
+
+def _exercise_total_volume(we: WorkoutExercise) -> float:
+    if we.sets_data:
+        rows = json.loads(we.sets_data)
+        return round(sum(r["reps"] * r["weight_kg"] for r in rows), 2)
+    return round(we.sets * we.reps * we.weight_kg, 2)
+
+
 def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
     return WorkoutExerciseOut(
         id=we.id,
@@ -180,9 +210,10 @@ def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
         sets=we.sets,
         reps=we.reps,
         weight_kg=we.weight_kg,
+        sets_data=_parse_sets_data(we),
         notes=we.notes,
         order_index=we.order_index,
-        total_volume=round(we.sets * we.reps * we.weight_kg, 2),
+        total_volume=_exercise_total_volume(we),
     )
 
 
@@ -263,12 +294,18 @@ def create_workout(
     db.flush()
 
     for item in payload.exercises:
+        sd = item.sets_data or []
+        computed_sets     = len(sd)
+        computed_reps     = max((s.reps for s in sd), default=1)
+        computed_weight   = max((s.weight_kg for s in sd), default=0.0)
+        sets_data_json    = json.dumps([s.model_dump() for s in sd]) if sd else None
         db.add(WorkoutExercise(
             workout_id=workout.id,
             exercise_id=item.exercise_id,
-            sets=item.sets,
-            reps=item.reps,
-            weight_kg=item.weight_kg,
+            sets=computed_sets,
+            reps=computed_reps,
+            weight_kg=computed_weight,
+            sets_data=sets_data_json,
             notes=item.notes,
             order_index=item.order_index,
         ))
@@ -313,11 +350,9 @@ def create_workout(
             PROut(
                 exercise_id=pr.exercise_id,
                 exercise_name=pr.exercise_name,
-                new_1rm=pr.new_1rm,
-                previous_1rm=pr.previous_1rm,
-                improvement_pct=pr.improvement_pct,
-                weight_kg=pr.weight_kg,
-                reps=pr.reps,
+                new_weight=pr.new_weight,
+                prev_weight=pr.prev_weight,
+                delta=pr.delta,
             )
             for pr in pr_results
         ],
@@ -344,7 +379,7 @@ def list_workouts(
     items = []
     for w in rows:
         exercises = db.query(WorkoutExercise).filter(WorkoutExercise.workout_id == w.id).all()
-        vol = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+        vol = sum(_exercise_total_volume(e) for e in exercises)
         items.append(WorkoutListItem(
             id=w.id,
             workout_date=w.workout_date,
@@ -382,7 +417,7 @@ def delete_workout(
     progress = db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
     if progress:
         # 1. Reverse XP from this workout
-        total_volume = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+        total_volume = sum(_exercise_total_volume(e) for e in exercises)
         xp_to_remove = (
             BASE_XP_PER_WORKOUT
             + len(exercises) * XP_PER_EXERCISE

@@ -6,15 +6,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Svg, { Line, Path, Polyline } from 'react-native-svg';
+import Svg, { Line, Path } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing, AvatarThemes, getAvatarStage, type AvatarThemeId } from '../../constants/theme';
 import { AvatarSVG }     from '../../components/avatar/AvatarSVG';
 import { MomentumRing } from '../../components/avatar/MomentumRing';
 import { Card }        from '../../components/ui/Card';
-import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
-import { ExerciseSearchModal, SetData } from '../../components/workout/ExerciseSearchModal';
+import { WorkoutLogScreen }          from '../../components/workout/WorkoutLogScreen';
 import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
 import { StageUpModal }          from '../../components/modals/StageUpModal';
@@ -28,12 +27,11 @@ import {
 } from '../../store/workoutStore';
 import { useAuthStore } from '../../store/authStore';
 import { progressApi, missionApi, type UserMissionResponse } from '../../services/gamificationApi';
+
 // ─── Icons ────────────────────────────────────────────────────────
-function IPlus()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={2} strokeLinecap="round"><Line x1="12" y1="5" x2="12" y2="19"/><Line x1="5" y1="12" x2="19" y2="12"/></Svg>; }
-function IFire()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>; }
-function IDumbbell() { return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M6.5 6.5h1v11h-1zM16.5 6.5h1v11h-1z"/><Line x1="4" y1="9" x2="7.5" y2="9"/><Line x1="4" y1="15" x2="7.5" y2="15"/><Line x1="16.5" y1="9" x2="20" y2="9"/><Line x1="16.5" y1="15" x2="20" y2="15"/><Line x1="7.5" y1="12" x2="16.5" y2="12"/></Svg>; }
-function ITrash()    { return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Polyline points="3 6 5 6 21 6"/><Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><Path d="M10 11v6M14 11v6"/><Path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></Svg>; }
-function IHistory()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M3 3v5h5"/><Path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><Path d="M12 7v5l4 2"/></Svg>; }
+function IFire()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>; }
+function IHistory() { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M3 3v5h5"/><Path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><Path d="M12 7v5l4 2"/></Svg>; }
+function IPlay()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill={Colors.bone} stroke="none"><Path d="M5 3l14 9-14 9V3z"/></Svg>; }
 
 const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
 const STAGE_THRESH = [0, 6, 16, 31, 51];
@@ -63,20 +61,18 @@ export default function WorkoutScreen() {
 
   const {
     exercises,
-    addExercise,
-    removeExercise,
     submitWorkout,
     submitStatus,
     pendingCount,
   } = useWorkoutStore();
 
-  const [showSearch,    setShowSearch]    = useState(false);
-  const [isCelebrating, setIsCelebrating] = useState(false);
+  const [showWorkoutLog, setShowWorkoutLog] = useState(false);
+  const [isCelebrating,  setIsCelebrating]  = useState(false);
 
   // Progress state — fetched from server on focus
-  const [totalWorkouts,   setTotalWorkouts]   = useState(0);
-  const [streak,          setStreak]          = useState(0);
-  const [activeMissions,  setActiveMissions]  = useState<UserMissionResponse[]>([]);
+  const [totalWorkouts,    setTotalWorkouts]    = useState(0);
+  const [streak,           setStreak]           = useState(0);
+  const [activeMissions,   setActiveMissions]   = useState<UserMissionResponse[]>([]);
   const [completedMission, setCompletedMission] = useState<UserMissionResponse | null>(null);
 
   useFocusEffect(
@@ -105,25 +101,26 @@ export default function WorkoutScreen() {
   const stageProgress = stage < 4
     ? Math.round((totalWorkouts - STAGE_THRESH[stage]) / (STAGE_THRESH[stageNext] - STAGE_THRESH[stage]) * 100)
     : 100;
-  const toNextStage  = stage < 4 ? STAGE_THRESH[stageNext] - totalWorkouts : 0;
-  const momentum     = Math.min(100, (totalWorkouts % 7) * 14 + 40);
-  const themeColor   = avatarTheme.color;
+  const toNextStage = stage < 4 ? STAGE_THRESH[stageNext] - totalWorkouts : 0;
+  const momentum    = Math.min(100, (totalWorkouts % 7) * 14 + 40);
+  const themeColor  = avatarTheme.color;
 
   // Modals
-  const [levelUpVisible,       setLevelUpVisible]       = useState(false);
-  const [newLevel,             setNewLevel]             = useState(1);
-  const [xpGained,             setXpGained]             = useState(0);
-  const [missionVisible,       setMissionVisible]       = useState(false);
-  const [stageUpVisible,       setStageUpVisible]       = useState(false);
-  const [newStage,             setNewStage]             = useState<typeof stage>(0);
-  const [achModalVisible,      setAchModalVisible]      = useState(false);
-  const [newAchievements,      setNewAchievements]      = useState<AchievementEarned[]>([]);
-  const [pendingAchievements,  setPendingAchievements]  = useState<AchievementEarned[]>([]);
-  const [prModalVisible,       setPrModalVisible]       = useState(false);
-  const [newPRs,               setNewPRs]               = useState<PRResult[]>([]);
+  const [levelUpVisible,      setLevelUpVisible]      = useState(false);
+  const [newLevel,            setNewLevel]            = useState(1);
+  const [xpGained,            setXpGained]            = useState(0);
+  const [missionVisible,      setMissionVisible]      = useState(false);
+  const [stageUpVisible,      setStageUpVisible]      = useState(false);
+  const [newStage,            setNewStage]            = useState<typeof stage>(0);
+  const [achModalVisible,     setAchModalVisible]     = useState(false);
+  const [newAchievements,     setNewAchievements]     = useState<AchievementEarned[]>([]);
+  const [pendingAchievements, setPendingAchievements] = useState<AchievementEarned[]>([]);
+  const [prModalVisible,      setPrModalVisible]      = useState(false);
+  const [newPRs,              setNewPRs]              = useState<PRResult[]>([]);
+  const [pendingPRs,          setPendingPRs]          = useState<PRResult[]>([]);
 
-  const totalReps    = selectTotalReps(exercises);
-  const totalVolume  = selectTotalVolume(exercises);
+  const totalReps   = selectTotalReps(exercises);
+  const totalVolume = selectTotalVolume(exercises);
   const hasExercises = exercises.length > 0;
 
   // ── Mission display helpers ────────────────────────────────────
@@ -136,7 +133,7 @@ export default function WorkoutScreen() {
       case 'total_reps':       return totalReps;
       case 'total_volume':     return totalVolume;
       case 'unique_exercises': return new Set(exercises.map(e => e.exerciseId)).size;
-      case 'muscle_sets':      return exercises.reduce((a, e) => a + e.sets, 0);
+      case 'muscle_sets':      return exercises.reduce((a, e) => a + e.setsData.length, 0);
       default:                 return 0;
     }
   }
@@ -172,42 +169,31 @@ export default function WorkoutScreen() {
     ? Math.min(100, Math.round(missionLiveProgress / firstMission.adjusted_target * 100))
     : 0;
 
-  function onExerciseAdd(data: SetData) {
-    addExercise({
-      exerciseId: data.exercise.id,
-      name:       data.exercise.name,
-      muscle:     data.exercise.muscle_group,
-      sets:       data.sets,
-      reps:       data.reps,
-      weight:     data.weight,
-    });
-  }
-
   async function finishWorkout() {
     if (!hasExercises) return;
-    const prevStage = stage;
+    const prevStage      = stage;
     const missionsBefore = activeMissions;
-    const result = await submitWorkout();
+    const result         = await submitWorkout();
     if (result) {
+      setShowWorkoutLog(false);
       setIsCelebrating(true);
       setTimeout(() => setIsCelebrating(false), 1000);
 
-      // Show PR modal if new personal records were set
-      const prs = result.new_prs ?? [];
-      if (prs.length > 0) {
-        setNewPRs(prs);
-        setPrModalVisible(true);
-      }
-
-      // Capture new achievements from response
       const earned = result.achievements ?? [];
+      const prs    = result.new_prs ?? [];
+
       if (earned.length > 0) {
         if (result.leveled_up) {
           setPendingAchievements(earned);
+          if (prs.length > 0) setPendingPRs(prs);
         } else {
           setNewAchievements(earned);
+          if (prs.length > 0) setPendingPRs(prs);
           setAchModalVisible(true);
         }
+      } else if (prs.length > 0) {
+        setNewPRs(prs);
+        setPrModalVisible(true);
       }
 
       if (result.leveled_up && result.new_level != null) {
@@ -216,7 +202,6 @@ export default function WorkoutScreen() {
         setLevelUpVisible(true);
       }
 
-      // Refresh progress + missions together
       try {
         const [progressRes, missionsRes] = await Promise.all([
           progressApi.get(),
@@ -230,10 +215,8 @@ export default function WorkoutScreen() {
           setNewStage(next);
           setStageUpVisible(true);
         }
-
-        // Detect newly completed missions: present in completed list but weren't before
         const beforeActiveIds = new Set(missionsBefore.map(m => m.id));
-        const justCompleted = (missionsRes.data.completed ?? []).filter(
+        const justCompleted   = (missionsRes.data.completed ?? []).filter(
           m => beforeActiveIds.has(m.id)
         );
         setActiveMissions(missionsRes.data.active);
@@ -245,12 +228,9 @@ export default function WorkoutScreen() {
     }
   }
 
-  const isLoading = submitStatus === 'loading';
-  const isSuccess = submitStatus === 'success';
-
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} pointerEvents={isLoading ? 'none' : 'auto'}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
         {/* ── Header ── */}
         <View style={s.header}>
@@ -331,68 +311,37 @@ export default function WorkoutScreen() {
           )}
         </Card>
 
-        {/* ── Exercise list ── */}
-        <View style={s.section}>
-          <View style={s.sectionHead}>
-            <Text style={s.lbl}>Exercises</Text>
-            {hasExercises && <Text style={s.monoSm}>{totalReps} reps total</Text>}
-          </View>
-
-          {exercises.length === 0 ? (
-            <View style={s.emptyState}>
-              <Text style={s.emptyIcon}>🏋️</Text>
-              <Text style={s.emptyTitle}>No exercises yet</Text>
-              <Text style={s.emptySub}>Tap below to add your first exercise</Text>
-            </View>
-          ) : (
-            exercises.map(ex => (
-              <View key={ex.localId} style={s.exRow}>
-                <View style={s.exIcon}><IDumbbell/></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.exName}>{ex.name}</Text>
-                  <Text style={s.exDetail}>
-                    {ex.sets}×{ex.reps} @ {ex.weight}kg
-                    <Text style={s.exVol}>  ·  {ex.sets * ex.reps * ex.weight} kg vol</Text>
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={() => removeExercise(ex.localId)} style={s.trashBtn}>
-                  <ITrash/>
-                </TouchableOpacity>
-              </View>
-            ))
-          )}
-
+        {/* ── In-progress summary (if session open) ── */}
+        {hasExercises && (
           <TouchableOpacity
-            style={s.addBtn}
-            onPress={() => setShowSearch(true)}
-            activeOpacity={0.7}
+            style={s.inProgressBanner}
+            onPress={() => setShowWorkoutLog(true)}
+            activeOpacity={0.8}
           >
-            <IPlus/>
-            <Text style={s.addBtnText}>
-              {exercises.length === 0 ? 'Add exercise' : 'Add another exercise'}
+            <View style={s.inProgressDot}/>
+            <View style={{ flex: 1 }}>
+              <Text style={s.inProgressTitle}>Workout in progress</Text>
+              <Text style={s.inProgressSub}>
+                {exercises.length} exercise{exercises.length !== 1 ? 's' : ''} · {totalReps} reps · {totalVolume.toFixed(0)} kg
+              </Text>
+            </View>
+            <Text style={s.inProgressResume}>Resume →</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Start / Continue workout CTA ── */}
+        <View style={s.ctaWrap}>
+          <TouchableOpacity
+            style={s.startBtn}
+            onPress={() => setShowWorkoutLog(true)}
+            activeOpacity={0.8}
+          >
+            <View style={s.startBtnIcon}><IPlay/></View>
+            <Text style={s.startBtnText}>
+              {hasExercises ? 'Continue workout' : 'Start workout'}
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* ── Summary ── */}
-        {hasExercises && (
-          <View style={s.summary}>
-            <View style={s.summaryItem}>
-              <Text style={s.summaryVal}>{exercises.length}</Text>
-              <Text style={s.summaryLbl}>Exercises</Text>
-            </View>
-            <View style={s.summaryDivider}/>
-            <View style={s.summaryItem}>
-              <Text style={s.summaryVal}>{totalReps}</Text>
-              <Text style={s.summaryLbl}>Total reps</Text>
-            </View>
-            <View style={s.summaryDivider}/>
-            <View style={s.summaryItem}>
-              <Text style={s.summaryVal}>{totalVolume.toFixed(0)}</Text>
-              <Text style={s.summaryLbl}>kg volume</Text>
-            </View>
-          </View>
-        )}
 
         {/* ── History shortcut ── */}
         <TouchableOpacity style={s.historyLink} onPress={() => router.push('/history')} activeOpacity={0.7}>
@@ -400,38 +349,31 @@ export default function WorkoutScreen() {
           <Text style={s.historyText}>View workout history</Text>
         </TouchableOpacity>
 
-        {/* ── Finish ── */}
-        <View style={{ paddingHorizontal: Spacing.lg, marginTop: 4, marginBottom: 32 }}>
-          <Button
-            label={isSuccess ? 'Session saved!' : isLoading ? 'Saving...' : 'Finish & log session'}
-            onPress={finishWorkout}
-            disabled={!hasExercises || isLoading || isSuccess}
-          />
-          {!hasExercises && (
-            <Text style={s.hintText}>Add at least one exercise to log</Text>
-          )}
-        </View>
-
       </ScrollView>
 
-      {/* ── Modals ── */}
-      <ExerciseSearchModal
-        visible={showSearch}
-        onClose={() => setShowSearch(false)}
-        onAdd={onExerciseAdd}
+      {/* ── Workout log full-screen ── */}
+      <WorkoutLogScreen
+        visible={showWorkoutLog}
+        onClose={() => setShowWorkoutLog(false)}
+        onFinish={finishWorkout}
+        submitStatus={submitStatus}
       />
 
+      {/* ── Post-workout modals ── */}
       <LevelUpModal
         visible={levelUpVisible}
         level={newLevel}
         xpGained={xpGained}
         onClose={() => {
           setLevelUpVisible(false);
-          // Show queued achievements after level-up modal closes
           if (pendingAchievements.length > 0) {
             setNewAchievements(pendingAchievements);
             setPendingAchievements([]);
             setTimeout(() => setAchModalVisible(true), 300);
+          } else if (pendingPRs.length > 0) {
+            setNewPRs(pendingPRs);
+            setPendingPRs([]);
+            setTimeout(() => setPrModalVisible(true), 300);
           }
         }}
       />
@@ -457,6 +399,11 @@ export default function WorkoutScreen() {
         onClose={() => {
           setAchModalVisible(false);
           setNewAchievements([]);
+          if (pendingPRs.length > 0) {
+            setNewPRs(pendingPRs);
+            setPendingPRs([]);
+            setTimeout(() => setPrModalVisible(true), 300);
+          }
         }}
       />
 
@@ -471,7 +418,7 @@ export default function WorkoutScreen() {
 
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: Colors.s1 },
-  scroll: { paddingTop: Spacing.xl },
+  scroll: { paddingTop: Spacing.xl, paddingBottom: 40 },
 
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: Spacing.xxl, marginBottom: Spacing.lg },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 4 },
@@ -482,47 +429,56 @@ const s = StyleSheet.create({
   avatarBtn:   { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   avatarInitial: { fontSize: 13, fontFamily: Fonts.bold, color: '#fff' },
 
-  lblCr:  { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.cr, textTransform: 'uppercase', marginBottom: 3 },
-  mHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  mName:  { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1 },
-  mSub:   { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, alignSelf: 'center' },
-  badge:  { backgroundColor: Colors.crLo, borderWidth: 1, borderColor: Colors.crBdr, borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3 },
+  lblCr:     { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.cr, textTransform: 'uppercase', marginBottom: 3 },
+  mHead:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mName:     { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1 },
+  mSub:      { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, alignSelf: 'center' },
+  badge:     { backgroundColor: Colors.crLo, borderWidth: 1, borderColor: Colors.crBdr, borderRadius: Radius.full, paddingHorizontal: 10, paddingVertical: 3 },
   badgeText: { fontSize: 10, fontFamily: Fonts.bold, color: Colors.cr, letterSpacing: 0.8 },
 
-  section:     { paddingHorizontal: Spacing.lg, marginBottom: Spacing.sm },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  monoSm:      { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  inProgressBanner: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    marginHorizontal: Spacing.lg,
+    marginTop:       12,
+    backgroundColor: Colors.s2,
+    borderRadius:    Radius.lg,
+    borderWidth:     1,
+    borderColor:     Colors.crBdr,
+    padding:         14,
+    gap:             12,
+  },
+  inProgressDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.cr },
+  inProgressTitle:  { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t1, marginBottom: 2 },
+  inProgressSub:    { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
+  inProgressResume: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr },
 
-  emptyState: { alignItems: 'center', paddingVertical: 28 },
-  emptyIcon:  { fontSize: 32, marginBottom: 10 },
-  emptyTitle: { fontSize: 15, fontFamily: Fonts.semiBold, color: Colors.t2, marginBottom: 4 },
-  emptySub:   { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t3 },
+  ctaWrap: { paddingHorizontal: Spacing.lg, marginTop: 16, marginBottom: 4 },
+  startBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             10,
+    backgroundColor: Colors.cr,
+    borderRadius:    Radius.lg,
+    paddingVertical: 16,
+  },
+  startBtnIcon: {
+    width:  28, height: 28,
+    borderRadius:    14,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  startBtnText: { fontSize: 16, fontFamily: Fonts.bold, color: Colors.bone },
 
-  exRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.s3, borderRadius: Radius.md, padding: 12, marginBottom: 7, borderWidth: 1, borderColor: Colors.line },
-  exIcon:   { width: 32, height: 32, borderRadius: 9, backgroundColor: Colors.s4, borderWidth: 1, borderColor: Colors.line, alignItems: 'center', justifyContent: 'center' },
-  exName:   { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, marginBottom: 2 },
-  exDetail: { fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
-  exVol:    { color: Colors.t3 },
-  trashBtn: { padding: 6 },
-
-  addBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: Colors.line, borderStyle: 'dashed', borderRadius: Radius.md, paddingVertical: 14, marginTop: 4 },
-  addBtnText: { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t2 },
-
-  summary:        { flexDirection: 'row', marginHorizontal: Spacing.lg, marginBottom: 10, backgroundColor: Colors.s2, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.line, padding: 16 },
-  summaryItem:    { flex: 1, alignItems: 'center' },
-  summaryVal:     { fontSize: 20, fontFamily: Fonts.monoBold, color: Colors.bone, marginBottom: 3 },
-  summaryLbl:     { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1, color: Colors.t3, textTransform: 'uppercase' },
-  summaryDivider: { width: 1, backgroundColor: Colors.line, marginVertical: 4 },
-
-  historyLink: { flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', paddingVertical: 10, marginBottom: 4 },
+  historyLink: { flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', paddingVertical: 12, marginTop: 8 },
   historyText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.t3 },
 
-  heroSection:     { alignItems: 'center', paddingBottom: 18 },
-  ringContainer:   { position: 'relative', width: 120, height: 120 },
-  avatarInRing:    { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -40 }, { translateY: -44 }] },
-  heroStageName:   { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t1, marginTop: 12, letterSpacing: 0.3 },
-  heroSessionCount:{ fontSize: 12, fontFamily: Fonts.mono, color: Colors.t3, marginTop: 3 },
-  heroBarWrap:     { width: '48%', marginTop: 10 },
-
-  hintText: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', marginTop: 8 },
+  heroSection:      { alignItems: 'center', paddingBottom: 18 },
+  ringContainer:    { position: 'relative', width: 120, height: 120 },
+  avatarInRing:     { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -40 }, { translateY: -44 }] },
+  heroStageName:    { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t1, marginTop: 12, letterSpacing: 0.3 },
+  heroSessionCount: { fontSize: 12, fontFamily: Fonts.mono, color: Colors.t3, marginTop: 3 },
+  heroBarWrap:      { width: '48%', marginTop: 10 },
 });
