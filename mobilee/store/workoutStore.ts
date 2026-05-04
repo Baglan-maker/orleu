@@ -85,11 +85,12 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     set({ exercises: [], notes: '', startedAt: null, submitStatus: 'idle', error: null }),
 
   submitWorkout: async () => {
-    const { exercises, notes, startedAt, submitStatus } = get();
-    if (submitStatus === 'loading' || submitStatus === 'success') return null;
-    if (exercises.length === 0) return null;
-
+    // Guard first, then snapshot — prevents double-tap from slipping past the check
+    if (get().submitStatus === 'loading' || get().submitStatus === 'success') return null;
+    if (get().exercises.length === 0) return null;
     set({ submitStatus: 'loading', error: null });
+
+    const { exercises, notes, startedAt } = get();
 
     const localId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const today   = new Date().toISOString().split('T')[0];
@@ -171,10 +172,16 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       for (const w of pending) {
         try {
           const exercises = await getExercisesForWorkout(w.id);
-          const hasInvalidId = exercises.some(
+          const invalidExercises = exercises.filter(
             ex => !ex.exercise_id.includes('-') || ex.exercise_id.startsWith('custom_')
           );
-          if (hasInvalidId) continue;
+          if (invalidExercises.length > 0) {
+            console.warn(
+              `[workoutStore] Skipping workout ${w.id}: contains ${invalidExercises.length} ` +
+              `unsynced custom exercise(s). Sync exercises first.`,
+            );
+            continue;
+          }
 
           const payload = {
             workout_date:     w.workout_date,
@@ -190,7 +197,17 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
             })),
           };
           await workoutApi.createWorkout(payload);
-          await markWorkoutSynced(w.id).catch(() => {});
+          // Retry marking as synced — failure here causes duplicates on next sync
+          let marked = false;
+          for (let attempt = 0; attempt < 3 && !marked; attempt++) {
+            try {
+              await markWorkoutSynced(w.id);
+              marked = true;
+            } catch { /* retry */ }
+          }
+          if (!marked) {
+            console.warn(`[workoutStore] Failed to mark workout ${w.id} as synced after 3 attempts`);
+          }
         } catch (syncErr) {
           console.warn('[workoutStore] failed to sync workout', w.id, syncErr);
         }
@@ -206,8 +223,9 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       const { getPendingCount } = await import('../services/database');
       const cnt = await getPendingCount();
       set({ pendingCount: cnt });
-    } catch {
-      set({ pendingCount: 0 });
+    } catch (err) {
+      // Retain previous pendingCount — setting to 0 hides the sync indicator
+      console.warn('[workoutStore] loadPendingCount failed:', err);
     }
   },
 }));

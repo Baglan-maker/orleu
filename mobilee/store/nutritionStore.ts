@@ -129,7 +129,17 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
         date,
       });
       await get().loadDay(date);
-    } catch {
+    } catch (err: unknown) {
+      // Only save offline for network errors — server validation errors should surface
+      const isOffline =
+        err instanceof Error &&
+        ('code' in err || err.message === 'Network Error' || err.message.includes('timeout'));
+      if (!isOffline && (err as Record<string, unknown>)?.response) {
+        set({ error: ((err as Record<string, unknown>).response as Record<string, unknown>)?.data
+          ? String(((err as Record<string, Record<string, unknown>>).response.data as Record<string, unknown>)?.detail ?? 'Failed to log food')
+          : 'Failed to log food' });
+        return;
+      }
       // Offline: save to SQLite for later sync
       const pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       await saveNutritionLogPending({
@@ -138,7 +148,7 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
         quantity_g:   quantityG,
         meal_type:    mealType,
         date,
-      }).catch(() => {});
+      }).catch((e) => console.warn('[nutritionStore] Failed to save pending log:', e));
     }
   },
 
@@ -156,7 +166,10 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
     try {
       const { data } = await api.get<NutritionGoals>('/api/nutrition/goals');
       set({ goals: data });
-    } catch {}
+    } catch (err: unknown) {
+      console.warn('[nutritionStore] loadGoals failed:', err);
+      set({ error: 'Failed to load nutrition goals' });
+    }
   },
 
   updateGoals: async (goals) => {
@@ -185,14 +198,28 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
             meal_type:    log.meal_type,
             date:         log.date,
           });
-          await markNutritionLogSynced(log.id);
-        } catch {}
+          // Retry marking as synced — failure causes duplicates on next sync
+          let marked = false;
+          for (let attempt = 0; attempt < 3 && !marked; attempt++) {
+            try {
+              await markNutritionLogSynced(log.id);
+              marked = true;
+            } catch { /* retry */ }
+          }
+          if (!marked) {
+            console.warn(`[nutritionStore] Failed to mark log ${log.id} as synced after 3 attempts`);
+          }
+        } catch (syncErr) {
+          console.warn('[nutritionStore] failed to sync nutrition log', log.id, syncErr);
+        }
       }
       if (pending.length > 0) {
         const { selectedDate } = get();
         await get().loadDay(selectedDate);
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[nutritionStore] syncPending failed:', err);
+    }
   },
 
   loadRecentFoods: async () => {
@@ -201,6 +228,8 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
     try {
       const { data } = await api.get<RecentFoodItem[]>('/api/nutrition/recent', { params: { limit: 8 } });
       set({ recentFoods: data, recentFoodsLoadedAt: Date.now() });
-    } catch {}
+    } catch (err) {
+      console.warn('[nutritionStore] loadRecentFoods failed:', err);
+    }
   },
 }));

@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -66,6 +67,7 @@ def check_and_update_prs(
         existing = (
             db.query(PersonalRecord)
             .filter_by(user_id=user_id, exercise_id=exercise_id)
+            .with_for_update()
             .first()
         )
 
@@ -157,11 +159,13 @@ def check_and_award_achievements(user_id: UUID, db: Session) -> list[Achievement
             continue
         user_value = stats.get(achievement.condition_type, 0)
         if user_value >= achievement.condition_value:
-            db.add(UserAchievement(user_id=user_id, achievement_id=achievement.id))
-            newly_awarded.append(achievement)
-
-    if newly_awarded:
-        db.flush()
+            try:
+                with db.begin_nested():
+                    db.add(UserAchievement(user_id=user_id, achievement_id=achievement.id))
+                    db.flush()
+                newly_awarded.append(achievement)
+            except IntegrityError:
+                pass  # Already awarded by concurrent request — safe to skip
 
     return newly_awarded
 
@@ -646,7 +650,13 @@ def try_advance_chapter(user_id: UUID, db: Session) -> dict:
     """
     _no_advance = {"advanced": False, "chapter_number": None, "campaign_complete": False, "xp": 0, "coins": 0}
 
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    # Lock progress row to prevent concurrent chapter advancement (double-fire).
+    progress = (
+        db.query(UserProgress)
+        .filter(UserProgress.user_id == user_id)
+        .with_for_update()
+        .first()
+    )
     if not progress:
         return _no_advance
 
@@ -676,8 +686,27 @@ def try_advance_chapter(user_id: UUID, db: Session) -> dict:
         db.commit()
         return {"advanced": True, "chapter_number": None, "campaign_complete": False, "xp": 0, "coins": 0}
 
-    # ── Step 2: Has campaign but no chapter — re-assign chapter 1 ────────────
+    # ── Step 2: Has campaign but no chapter — recovery or "all done" ──────────
     if progress.current_chapter_id is None:
+        # If no higher-order campaign exists, the user has completed everything.
+        # Don't re-assign chapter 1 of the finished campaign (that causes a loop).
+        current_order = (
+            db.query(Campaign.order_index)
+            .filter(Campaign.id == progress.current_campaign_id)
+            .scalar()
+        )
+        has_next_campaign = (
+            db.query(Campaign.id)
+            .filter(
+                Campaign.is_active == True,
+                Campaign.order_index > (current_order or 0),
+            )
+            .first()
+        )
+        if not has_next_campaign:
+            return _no_advance  # all campaigns completed — nothing to advance
+
+        # Data inconsistency recovery: re-assign chapter 1
         chapters = (
             db.query(CampaignChapter)
             .filter(CampaignChapter.campaign_id == progress.current_campaign_id)

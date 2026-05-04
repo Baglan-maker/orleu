@@ -89,9 +89,10 @@ def get_missions(
     for t in all_templates:
         if t.id in active_template_ids:
             continue
-        # Filter by campaign path if template has a path requirement
-        if t.campaign_path_filter and user_path and t.campaign_path_filter != user_path:
-            continue
+        # Filter by campaign path: hide path-specific missions until user has chosen a path
+        if t.campaign_path_filter:
+            if not user_path or t.campaign_path_filter != user_path:
+                continue
         tmpl_out = MissionTemplateOut.model_validate(t)
         tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
         available.append(tmpl_out)
@@ -129,10 +130,16 @@ def accept_mission(
     if existing:
         raise HTTPException(status_code=409, detail="Mission already active")
 
-    # Max 2 active missions at a time (lock rows to prevent race condition)
+    # Lock the user's progress row to serialize all mission accepts for this user.
+    # This prevents the race where 0 active missions exist (no rows to lock),
+    # allowing 3+ concurrent accepts to all pass the limit check.
+    db.query(UserProgress).filter(
+        UserProgress.user_id == current_user.id
+    ).with_for_update().first()
+
+    # Max 2 active missions at a time (serialized by the progress lock above)
     active_count = (
         db.query(UserMission)
-        .with_for_update()
         .filter(
             UserMission.user_id == current_user.id,
             UserMission.status == "active",
@@ -143,13 +150,16 @@ def accept_mission(
     if len(active_count) >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
-    # Scale target based on user level (cap at level 50 to prevent exponential blowup)
+    # Scale target based on user level.
+    # Cap the multiplier at 5x base to prevent impossible targets at high levels.
     progress = db.query(UserProgress).filter(
         UserProgress.user_id == current_user.id
     ).first()
     level = progress.level if progress else 1
     capped_level = min(level, 50)
-    adjusted_target = template.base_target * (template.difficulty_scale ** max(0, capped_level - 1))
+    raw_target = template.base_target * (template.difficulty_scale ** max(0, capped_level - 1))
+    max_target = template.base_target * 5.0
+    adjusted_target = min(raw_target, max_target)
 
     mission = UserMission(
         user_id=current_user.id,

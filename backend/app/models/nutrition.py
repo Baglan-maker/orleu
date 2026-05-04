@@ -31,7 +31,7 @@ class NutritionLog(Base):
     id           = uuid_pk()
     user_id      = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     date         = Column(Date, nullable=False)
-    meal_type    = Column(String(20), nullable=False)  # breakfast|lunch|dinner|snack
+    meal_type    = Column(String(20), nullable=False)  # breakfast|lunch|dinner|snacks
     food_item_id = Column(UUID(as_uuid=True), ForeignKey("food_items.id"), nullable=False)
     quantity_g   = Column(Float, nullable=False)
     calories     = Column(Float, nullable=False)

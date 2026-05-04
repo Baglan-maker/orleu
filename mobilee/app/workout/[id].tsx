@@ -365,7 +365,11 @@ export default function WorkoutDetailScreen() {
   const [error,     setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setError('Invalid workout ID');
+      setIsLoading(false);
+      return;
+    }
     (async () => {
       try {
         const { data } = await workoutApi.getById(id);

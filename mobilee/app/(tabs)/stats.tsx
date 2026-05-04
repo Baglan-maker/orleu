@@ -198,6 +198,7 @@ export default function ProfileScreen() {
   const [prs,            setPrs]            = useState<PRCurrentItem[]>([]);
   const [muscleData,     setMuscleData]     = useState<MuscleItem[]>([]);
   const [loading,        setLoading]        = useState(true);
+  const [fetchError,     setFetchError]     = useState<string | null>(null);
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
 
@@ -256,7 +257,7 @@ export default function ProfileScreen() {
             setMuscleData(buildMuscleData(allExercises));
           }
         } catch {
-          // fallback — keep defaults
+          if (!cancelled) setFetchError('Could not load profile data. Pull down to retry.');
         } finally {
           if (!cancelled) setLoading(false);
         }
@@ -342,6 +343,12 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+
+        {fetchError && (
+          <View style={{ backgroundColor: Colors.s3, borderRadius: Radius.md, padding: Spacing.md, marginHorizontal: Spacing.lg, marginTop: Spacing.sm }}>
+            <Text style={{ color: Colors.dn, fontFamily: Fonts.regular, fontSize: 13 }}>{fetchError}</Text>
+          </View>
+        )}
 
         {/* ── Header ── */}
         <View style={s.header}>

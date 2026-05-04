@@ -115,13 +115,15 @@ def patch_progress(
             raise HTTPException(status_code=404, detail="Campaign not found")
         progress.current_campaign_id = body.current_campaign_id
 
-    # Validate chapter_id if provided
+    # Validate chapter_id if provided — must belong to the user's active campaign
     if body.current_chapter_id is not None:
         chapter = db.query(CampaignChapter).filter(
             CampaignChapter.id == body.current_chapter_id
         ).first()
         if not chapter:
             raise HTTPException(status_code=404, detail="Chapter not found")
+        if chapter.campaign_id != progress.current_campaign_id:
+            raise HTTPException(status_code=400, detail="Chapter does not belong to the active campaign")
         progress.current_chapter_id = body.current_chapter_id
 
     if body.campaign_path is not None:

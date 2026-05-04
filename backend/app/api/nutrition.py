@@ -343,7 +343,9 @@ def patch_goals(
 
     # Map frontend field names (calories, protein_g, …) → DB column names
     for field, value in payload.model_dump(exclude_none=True).items():
-        db_column = GOALS_FIELD_MAP[field]
+        db_column = GOALS_FIELD_MAP.get(field)
+        if db_column is None:
+            continue  # unknown field — skip safely
         setattr(goals, db_column, value)
 
     db.commit()

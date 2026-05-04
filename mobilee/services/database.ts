@@ -73,8 +73,12 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     await _db.execAsync(
       `ALTER TABLE workout_exercises_local ADD COLUMN sets_data TEXT`
     );
-  } catch {
-    // Column already exists — ignore
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Only silence "duplicate column" errors — surface anything else
+    if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+      console.error('[database] Failed to add sets_data column:', msg);
+    }
   }
 
   return _db;

@@ -18,7 +18,7 @@ import {
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
 const BASE_URL = __DEV__
-  ? 'http://192.168.0.100:8080'   // ← замени на свой IP
+  ? 'http://192.168.100.68:8080'   // ← замени на свой IP
   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
@@ -42,6 +42,7 @@ export function registerForceLogout(fn: () => void) { _forceLogout = fn; }
 
 // ─── Response interceptor — обновляем токен при 401 ──────────────
 let isRefreshing = false;
+const MAX_REFRESH_QUEUE = 50;
 // очередь запросов ожидающих обновления токена
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -71,6 +72,9 @@ api.interceptors.response.use(
 
     // Если уже идёт обновление токена — ставим запрос в очередь
     if (isRefreshing) {
+      if (failedQueue.length >= MAX_REFRESH_QUEUE) {
+        return Promise.reject(new Error('Too many queued requests during token refresh'));
+      }
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       }).then((token) => {
