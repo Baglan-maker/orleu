@@ -18,6 +18,22 @@ import {
 } from '../services/storage';
 import { authApi, registerForceLogout } from '../services/api';
 
+// FastAPI returns 422 validation errors as an array of {type, loc, msg, ...}.
+// 401/400 errors return a plain string. Normalize both to a single message.
+function extractErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: any) => d?.msg ?? '')
+      .filter(Boolean)
+      .join(', ') || fallback;
+  }
+  if (detail && typeof detail === 'object' && 'msg' in (detail as any)) {
+    return String((detail as any).msg);
+  }
+  return fallback;
+}
+
 // ─── Типы ────────────────────────────────────────────────────────
 export interface User {
   id:               string;
@@ -93,7 +109,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
       set({ user: data.user, isLoggedIn: true });
     } catch (err: any) {
-      const msg = err?.response?.data?.detail ?? 'Login failed. Check your credentials.';
+      const msg = extractErrorMessage(
+        err?.response?.data?.detail,
+        'Login failed. Check your credentials.',
+      );
       set({ error: msg });
       throw err; // пробрасываем чтобы компонент мог среагировать
     }
@@ -111,7 +130,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
       set({ user: res.user, isLoggedIn: true });
     } catch (err: any) {
-      const msg = err?.response?.data?.detail ?? 'Registration failed. Try again.';
+      const msg = extractErrorMessage(
+        err?.response?.data?.detail,
+        'Registration failed. Try again.',
+      );
       set({ error: msg });
       throw err;
     }
