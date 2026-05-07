@@ -152,7 +152,12 @@ export default function RegisterScreen() {
             <View>
               {/* Character picker */}
               <Text style={styles.sectionLabel}>CHOOSE YOUR CHARACTER</Text>
-              <View style={styles.charGrid}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.charScrollContent}
+                style={styles.charScroll}
+              >
                 {CHARACTERS.map(c => {
                   const selected = avatarId === c.id;
                   return (
@@ -173,7 +178,7 @@ export default function RegisterScreen() {
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
 
               {/* Experience */}
               <Text style={[styles.sectionLabel, { marginTop: 20 }]}>EXPERIENCE LEVEL</Text>
@@ -277,12 +282,16 @@ const styles = StyleSheet.create({
 
   sectionLabel: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, marginBottom: 10 },
 
-  // ── Character grid (scales to 5-6 chars, 2 per row) ──
-  charGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
+  // ── Character picker — horizontal scroll, scales to N characters ──
+  charScroll: {
+    marginHorizontal: -Spacing.xxl, // bleed to screen edges
+  },
+  charScrollContent: {
+    paddingHorizontal: Spacing.xxl,
+    gap: 12,
   },
   charCard: {
-    width: '47%', alignItems: 'center',
+    width: 130, alignItems: 'center',
     paddingVertical: 16, paddingHorizontal: 8,
     backgroundColor: Colors.s3, borderRadius: 16,
     borderWidth: 1.5, borderColor: Colors.line,

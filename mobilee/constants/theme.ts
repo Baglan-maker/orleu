@@ -98,6 +98,8 @@ export const Colors = {
   export const CHARACTERS = [
     { id: 0, name: 'Ares'    },
     { id: 1, name: 'Phantom' },
+    { id: 2, name: 'Titan'   },
+    { id: 3, name: 'Wraith'  },
   ] as const;
 
   // XP required to advance from level `lvl` to the next.
@@ -125,6 +127,20 @@ export const Colors = {
       2: require('../assets/character2-lvl3.png'),
       3: require('../assets/character2-lvl4.png'),
       4: require('../assets/character2-lvl5.png'),
+    },
+    2: {
+      0: require('../assets/character3-lvl1.png'),
+      1: require('../assets/character3-lvl2.png'),
+      2: require('../assets/character3-lvl3.png'),
+      3: require('../assets/character3-lvl4.png'),
+      4: require('../assets/character3-lvl5.png'),
+    },
+    3: {
+      0: require('../assets/character4-lvl1.png'),
+      1: require('../assets/character4-lvl2.png'),
+      2: require('../assets/character4-lvl3.png'),
+      3: require('../assets/character4-lvl4.png'),
+      4: require('../assets/character4-lvl5.png'),
     },
   };
 
