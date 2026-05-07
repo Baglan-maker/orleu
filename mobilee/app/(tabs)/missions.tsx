@@ -62,13 +62,15 @@ export default function MissionsScreen() {
     try {
       const [missionsRes, coachRes] = await Promise.all([
         missionApi.getAll(),
-        coachApi.getMessages(1).catch(() => null),  // coach is optional, don't break missions if it fails
+        coachApi.getMessages(5).catch(() => null),  // coach is optional, don't break missions if it fails
       ]);
       setActiveMissions(missionsRes.data.active);
       setCompletedMissions(missionsRes.data.completed ?? []);
       setAvailableTemplates(missionsRes.data.available);
       setTrend(missionsRes.data.trend ?? null);
-      setCoachMsg(coachRes?.data?.[0] ?? null);
+      // Prefer latest unread; fall back to latest read so the AI Coach card always has content
+      const msgs = coachRes?.data ?? [];
+      setCoachMsg(msgs.find(m => !m.is_read) ?? msgs[0] ?? null);
     } catch {
       // Keep existing state
     } finally {

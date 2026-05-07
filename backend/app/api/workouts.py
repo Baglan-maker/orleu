@@ -13,6 +13,7 @@ from sqlalchemy import func
 from app.schemas.workout import (
     WorkoutCreate, WorkoutOut, WorkoutExerciseOut, SetEntry,
     WorkoutListItem, WorkoutListResponse, AchievementEarned, PROut,
+    ChapterCompletedOut,
 )
 from app.services.dependencies import get_current_user
 from app.services.gamification_service import try_advance_chapter, check_and_award_achievements, check_and_update_prs
@@ -265,6 +266,7 @@ def _to_workout_out(
         leveled_up=gam.get("leveled_up", False),
         achievements=gam.get("achievements", []),
         new_prs=gam.get("new_prs", []),
+        chapter_completed=gam.get("chapter_completed"),
         created_at=workout.created_at,
         updated_at=workout.updated_at,
     )
@@ -363,7 +365,16 @@ def create_workout(
     # Re-fetch progress so SQLAlchemy identity map is cleared before chapter check
     db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
     # Advance campaign chapter (separate commit inside try_advance_chapter)
-    try_advance_chapter(current_user.id, db)
+    chapter_result = try_advance_chapter(current_user.id, db)
+
+    chapter_completed = None
+    if chapter_result.get("advanced") and chapter_result.get("chapter_number"):
+        chapter_completed = ChapterCompletedOut(
+            chapter_number=chapter_result["chapter_number"],
+            xp=chapter_result.get("xp", 0),
+            coins=chapter_result.get("coins", 0),
+            campaign_complete=chapter_result.get("campaign_complete", False),
+        )
 
     gamification = {
         **(reward or {}),
@@ -384,6 +395,7 @@ def create_workout(
             )
             for pr in pr_results
         ],
+        "chapter_completed": chapter_completed,
     }
     return _to_workout_out(workout, gamification=gamification)
 

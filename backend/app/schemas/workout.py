@@ -84,6 +84,14 @@ class PROut(BaseModel):
     delta:         float   # improvement in kg
 
 
+class ChapterCompletedOut(BaseModel):
+    """Set when a workout triggers chapter advancement."""
+    chapter_number:    int
+    xp:                int
+    coins:             int
+    campaign_complete: bool = False
+
+
 class WorkoutOut(BaseModel):
     id:               UUID
     user_id:          UUID
@@ -98,6 +106,7 @@ class WorkoutOut(BaseModel):
     leveled_up:       bool = False
     achievements:     List[AchievementEarned] = []
     new_prs:          List[PROut] = []
+    chapter_completed: Optional[ChapterCompletedOut] = None
     created_at:       datetime
     updated_at:       datetime
 

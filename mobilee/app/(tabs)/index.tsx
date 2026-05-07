@@ -14,10 +14,12 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WorkoutLogScreen }          from '../../components/workout/WorkoutLogScreen';
 import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
+import { ChapterCompleteModal }  from '../../components/modals/ChapterCompleteModal';
 import { StageUpModal }          from '../../components/modals/StageUpModal';
 import { CharacterInfoModal }    from '../../components/modals/CharacterInfoModal';
 import { AchievementModal, type AchievementEarned } from '../../components/modals/AchievementModal';
 import { PRModal, type PRResult } from '../../components/modals/PRModal';
+import { XpToast }               from '../../components/ui/XpToast';
 import { SyncStatusIndicator }   from '../../components/SyncStatusIndicator';
 import {
   useWorkoutStore,
@@ -115,6 +117,15 @@ export default function WorkoutScreen() {
   const [prModalVisible,      setPrModalVisible]      = useState(false);
   const [newPRs,              setNewPRs]              = useState<PRResult[]>([]);
   const [pendingPRs,          setPendingPRs]          = useState<PRResult[]>([]);
+  const [chapterModalVisible, setChapterModalVisible] = useState(false);
+  const [chapterReward,       setChapterReward]       = useState<{
+    chapter_number: number; xp: number; coins: number; campaign_complete: boolean;
+  } | null>(null);
+  const [pendingChapter,      setPendingChapter]      = useState<{
+    chapter_number: number; xp: number; coins: number; campaign_complete: boolean;
+  } | null>(null);
+  const [xpToastVisible,      setXpToastVisible]      = useState(false);
+  const [xpToastAmount,       setXpToastAmount]       = useState(0);
 
   const totalReps   = selectTotalReps(exercises);
   const totalVolume = selectTotalVolume(exercises);
@@ -175,25 +186,39 @@ export default function WorkoutScreen() {
       setShowWorkoutLog(false);
       const earned = result.achievements ?? [];
       const prs    = result.new_prs ?? [];
+      const chapter = result.chapter_completed ?? null;
 
       if (earned.length > 0) {
         if (result.leveled_up) {
           setPendingAchievements(earned);
           if (prs.length > 0) setPendingPRs(prs);
+          if (chapter) setPendingChapter(chapter);
         } else {
           setNewAchievements(earned);
           if (prs.length > 0) setPendingPRs(prs);
+          if (chapter) setPendingChapter(chapter);
           setAchModalVisible(true);
         }
       } else if (prs.length > 0) {
         setNewPRs(prs);
+        if (chapter) setPendingChapter(chapter);
         setPrModalVisible(true);
+      } else if (chapter && !result.leveled_up) {
+        // No level-up, no achievements, no PRs — show chapter directly
+        setChapterReward(chapter);
+        setChapterModalVisible(true);
       }
 
       if (result.leveled_up && result.new_level != null) {
         setXpGained(result.xp_gained ?? 0);
         setNewLevel(result.new_level);
         setLevelUpVisible(true);
+      } else if (
+        // No celebration modals at all → show the lightweight XP toast
+        !earned.length && !prs.length && !chapter && (result.xp_gained ?? 0) > 0
+      ) {
+        setXpToastAmount(result.xp_gained ?? 0);
+        setXpToastVisible(true);
       }
 
       try {
@@ -405,6 +430,10 @@ export default function WorkoutScreen() {
             setNewPRs(pendingPRs);
             setPendingPRs([]);
             setTimeout(() => setPrModalVisible(true), 300);
+          } else if (pendingChapter) {
+            setChapterReward(pendingChapter);
+            setPendingChapter(null);
+            setTimeout(() => setChapterModalVisible(true), 300);
           }
         }}
       />
@@ -434,6 +463,10 @@ export default function WorkoutScreen() {
             setNewPRs(pendingPRs);
             setPendingPRs([]);
             setTimeout(() => setPrModalVisible(true), 300);
+          } else if (pendingChapter) {
+            setChapterReward(pendingChapter);
+            setPendingChapter(null);
+            setTimeout(() => setChapterModalVisible(true), 300);
           }
         }}
       />
@@ -441,7 +474,33 @@ export default function WorkoutScreen() {
       <PRModal
         prs={newPRs}
         visible={prModalVisible}
-        onClose={() => { setPrModalVisible(false); setNewPRs([]); }}
+        onClose={() => {
+          setPrModalVisible(false);
+          setNewPRs([]);
+          if (pendingChapter) {
+            setChapterReward(pendingChapter);
+            setPendingChapter(null);
+            setTimeout(() => setChapterModalVisible(true), 300);
+          }
+        }}
+      />
+
+      <ChapterCompleteModal
+        visible={chapterModalVisible}
+        chapterNumber={chapterReward?.chapter_number ?? 0}
+        xp={chapterReward?.xp ?? 0}
+        coins={chapterReward?.coins ?? 0}
+        campaignComplete={chapterReward?.campaign_complete ?? false}
+        onClose={() => {
+          setChapterModalVisible(false);
+          setChapterReward(null);
+        }}
+      />
+
+      <XpToast
+        xp={xpToastAmount}
+        visible={xpToastVisible}
+        onHide={() => setXpToastVisible(false)}
       />
 
       <CharacterInfoModal

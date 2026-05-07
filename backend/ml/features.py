@@ -3,7 +3,7 @@ Feature extraction for the Orleu ML pipeline.
 build_features(user_id, db) → dict of 5 floats used by predict_trend().
 """
 from uuid import UUID
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -13,7 +13,9 @@ from app.models.nutrition import NutritionLog
 
 
 def build_features(user_id: UUID, db: Session) -> dict:
-    today         = date.today()
+    # Use UTC date so the feature window matches the nightly job's run time
+    # regardless of the server's local timezone.
+    today         = datetime.now(timezone.utc).date()
     week_ago      = today - timedelta(days=7)
     two_weeks_ago = today - timedelta(days=14)
 
@@ -116,6 +118,16 @@ def build_features(user_id: UUID, db: Session) -> dict:
             .scalar()
         ) or 0
         nutrition_consistency = min(distinct_nutrition_days, 14) / 14.0
+
+    # Clip features to the same ranges the model was trained on (see ml/train.py
+    # _CLIPS). Without this, extreme real-world values (e.g. 350% volume jump
+    # because previous week was nearly zero) become out-of-distribution and the
+    # model has to extrapolate — predictions and SHAP values become unreliable.
+    weekly_volume_delta = max(-1.0, min(1.0, weekly_volume_delta))
+    session_frequency   = max( 0.0, min(1.0, session_frequency))
+    load_progression    = max( 0.5, min(2.0, load_progression))
+    consistency_score   = max( 0.0, min(1.0, consistency_score))
+    nutrition_consistency = max(0.0, min(1.0, nutrition_consistency))
 
     return {
         "weekly_volume_delta":   round(weekly_volume_delta,   4),

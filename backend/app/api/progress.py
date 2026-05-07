@@ -14,21 +14,16 @@ from app.services.gamification_service import try_advance_chapter
 
 router = APIRouter()
 
-# Doc Section 9 — Avatar stages by total workout count
-_AVATAR_STAGES = [
-    (51, 4, "Legend"),
-    (31, 3, "Champion"),
-    (16, 2, "Athlete"),
-    (6,  1, "Active"),
-    (0,  0, "Rookie"),
-]
+# Avatar stage is derived from player level.
+# Single source of truth — XP thresholds in workouts.py drive both level and stage.
+# level 1 → stage 0 (Rookie), level 5 → stage 4 (Legend)
+_STAGE_NAMES = ["Rookie", "Active", "Athlete", "Champion", "Legend"]
 
 
-def _avatar_stage(total_sessions: int) -> tuple[int, str]:
-    for threshold, stage, name in _AVATAR_STAGES:
-        if total_sessions >= threshold:
-            return stage, name
-    return 0, "Rookie"
+def _avatar_stage(level: int) -> tuple[int, str]:
+    """Stage = level - 1, capped at 4."""
+    stage = max(0, min(level - 1, 4))
+    return stage, _STAGE_NAMES[stage]
 
 
 def _build_progress_out(
@@ -36,7 +31,7 @@ def _build_progress_out(
     total_sessions: int,
     achievements: list[AchievementOut] | None = None,
 ) -> ProgressOut:
-    stage, stage_name = _avatar_stage(total_sessions)
+    stage, stage_name = _avatar_stage(progress.level or 1)
     return ProgressOut(
         user_id=progress.user_id,
         xp=progress.xp,

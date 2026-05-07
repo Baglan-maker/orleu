@@ -9,6 +9,7 @@ from uuid import UUID
 
 import joblib
 import numpy as np
+import pandas as pd
 import shap
 from sqlalchemy.orm import Session
 
@@ -47,7 +48,9 @@ def predict_trend(user_id: UUID, db: Session) -> dict:
     label_map    = bundle["label_map"]
 
     features = build_features(user_id, db)
-    X = np.array([[features[col] for col in feature_cols]], dtype=np.float64)
+    # Use DataFrame (not raw ndarray) so feature names match the trained model
+    # and sklearn doesn't warn on every prediction.
+    X = pd.DataFrame([[features[col] for col in feature_cols]], columns=feature_cols)
 
     proba      = model.predict_proba(X)[0]       # shape (3,)
     pred_class = int(np.argmax(proba))

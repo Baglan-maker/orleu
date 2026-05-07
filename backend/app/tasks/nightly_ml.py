@@ -91,7 +91,12 @@ def run_nightly_predictions() -> int:
 
             db.flush()  # ensures prediction.id is set before generate_message
 
-            generate_message(user.id, prediction, db)
+            # Don't let a coach-message bug roll back the whole prediction:
+            # the prediction is the canonical artifact, the message is downstream UX.
+            try:
+                generate_message(user.id, prediction, db)
+            except Exception:
+                pass
 
             db.commit()
             processed += 1

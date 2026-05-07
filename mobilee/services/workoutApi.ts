@@ -68,6 +68,13 @@ export interface PRResult {
   delta:         number;
 }
 
+export interface ChapterCompleted {
+  chapter_number:    number;
+  xp:                number;
+  coins:             number;
+  campaign_complete: boolean;
+}
+
 export interface WorkoutResponse {
   id:               string;
   user_id:          string;
@@ -82,6 +89,7 @@ export interface WorkoutResponse {
   leveled_up:       boolean;
   achievements:     AchievementEarned[];
   new_prs:          PRResult[];
+  chapter_completed: ChapterCompleted | null;
   created_at:       string;
   updated_at:       string;
 }
