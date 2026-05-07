@@ -15,7 +15,7 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import {
   progressApi, campaignApi, coachApi,
   type ProgressResponse, type CampaignResponse,
-  type ChapterResponse, type CoachMessage,
+  type ChapterResponse, type CoachMessageResponse,
   type ChapterRequirement, type CampaignCurrentResponse,
 } from '../../services/gamificationApi';
 
@@ -62,7 +62,7 @@ export default function CampaignScreen() {
   const [campaign,      setCampaign]       = useState<CampaignResponse | null>(null);
   const [chapters,      setChapters]       = useState<ChapterResponse[]>([]);
   const [requirements,  setRequirements]   = useState<ChapterRequirement[]>([]);
-  const [coachMsg,      setCoachMsg]       = useState<CoachMessage | null>(null);
+  const [coachMsg,      setCoachMsg]       = useState<CoachMessageResponse | null>(null);
   const [loading,       setLoading]        = useState(true);
   const [branch,        setBranch]         = useState<'A' | 'B' | null>(null);
   const [confirming,    setConfirming]     = useState(false);
@@ -108,7 +108,7 @@ export default function CampaignScreen() {
             }
             lastSeenCampaignId.current = cur.campaign.id;
 
-            const coachRes = await coachApi.getMessages().catch(() => ({ data: [] as CoachMessage[] }));
+            const coachRes = await coachApi.getMessages().catch(() => ({ data: [] as CoachMessageResponse[] }));
             if (!cancelled) {
               const msgs = coachRes.data;
               setCoachMsg(msgs.length > 0 ? msgs[0] : null);
@@ -536,7 +536,7 @@ export default function CampaignScreen() {
             <View style={{ flex: 1 }}>
               <Text style={s.coachLabel}>AI COACH</Text>
               <Text style={s.coachText}>
-                {coachMsg?.message ?? 'Keep pushing — consistency is the key to your ascent.'}
+                {coachMsg?.message_text ?? 'Keep pushing — consistency is the key to your ascent.'}
               </Text>
             </View>
           </View>

@@ -1,7 +1,7 @@
 // mobile/app/(tabs)/stats.tsx — Unified Profile Page
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, ActivityIndicator, ScrollView, StyleSheet, Text,
+  Animated, ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,14 +10,12 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import {
   Colors, Fonts, Radius, Spacing,
-  AvatarThemes, getAvatarStage, type AvatarThemeId,
+  AvatarThemes, stageFromLevel, getCharacterImage, xpForLevel, type AvatarThemeId,
 } from '../../constants/theme';
-import { AvatarSVG }     from '../../components/avatar/AvatarSVG';
-import { MomentumRing }  from '../../components/avatar/MomentumRing';
 import { ProgressBar }   from '../../components/ui/ProgressBar';
 import { useAuthStore }  from '../../store/authStore';
 import { useAchievementStore } from '../../store/achievementStore';
-import { progressApi, type ProgressResponse } from '../../services/gamificationApi';
+import { progressApi, mlApi, type ProgressResponse, type MlStatusResponse } from '../../services/gamificationApi';
 import {
   workoutApi, prsApi,
   type WorkoutListItem, type PRCurrentItem,
@@ -90,10 +88,8 @@ function ITrophy({ color = Colors.bone }: { color?: string }) {
 // ─── Constants ────────────────────────────────────────────────────
 const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
 const WEEK_DAYS    = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const SCREEN_H     = Dimensions.get('window').height;
 
-function xpForLevel(lvl: number) {
-  return Math.floor(100 * Math.pow(1.15, lvl - 1));
-}
 
 // ─── Volume chart helpers ─────────────────────────────────────────
 interface WeekData { label: string; volume: number }
@@ -197,6 +193,7 @@ export default function ProfileScreen() {
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutListItem[]>([]);
   const [prs,            setPrs]            = useState<PRCurrentItem[]>([]);
   const [muscleData,     setMuscleData]     = useState<MuscleItem[]>([]);
+  const [mlStatus,       setMlStatus]       = useState<MlStatusResponse | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [fetchError,     setFetchError]     = useState<string | null>(null);
 
@@ -225,10 +222,11 @@ export default function ProfileScreen() {
       let cancelled = false;
       (async () => {
         try {
-          const [progRes, histRes, prsRes] = await Promise.all([
+          const [progRes, histRes, prsRes, mlRes] = await Promise.all([
             progressApi.get(),
             workoutApi.getHistory(50),
             prsApi.getAll(),
+            mlApi.status().catch(() => null),   // ML may 401/500 on first run — don't block screen
           ]);
           if (cancelled) return;
 
@@ -237,6 +235,7 @@ export default function ProfileScreen() {
           const hist: WorkoutListItem[] = progRes.data ? ((histRes.data as any).items ?? []) : [];
           setWorkoutHistory(hist);
           setPrs(prsRes.data);
+          setMlStatus(mlRes?.data ?? null);
           fetchAchievements();
 
           // Fetch muscle data for last 7 days
@@ -288,17 +287,25 @@ export default function ProfileScreen() {
   const longest  = progress?.longest_streak ?? 0;
   const coins    = progress?.coins ?? 0;
 
-  const xpNext   = xpForLevel(level);
+  const isMaxLevel = level >= 5;
+  const xpNext   = xpForLevel(level); // 0 when max level
   let xpUsed = 0;
   for (let l = 1; l < level; l++) xpUsed += xpForLevel(l);
-  const xpInLevel = xp - xpUsed;
-  const xpPct     = xpNext > 0 ? Math.round((xpInLevel / xpNext) * 100) : 0;
+  const xpInLevel = isMaxLevel ? 0 : Math.max(0, xp - xpUsed);
+  const xpPct     = isMaxLevel ? 100 : (xpNext > 0 ? Math.min(100, Math.round((xpInLevel / xpNext) * 100)) : 0);
 
-  const stage     = getAvatarStage(totalWorkouts);
-  const momentum  = Math.min(100, (totalWorkouts % 7) * 14 + 40);
+  const stage     = stageFromLevel(level);
   const score     = Math.round(totalWorkouts * 12 + stage * 80 + xp * 0.1);
-  const trendLabel = streak >= 3 ? 'Improving' : streak >= 1 ? 'Active' : 'Getting Started';
-  const trendColor = streak >= 3 ? Colors.up : streak >= 1 ? Colors.bone : Colors.t3;
+  // ML-driven trend when available; fall back to streak-based heuristic for cold-start users
+  const ML_TREND_COLOR = { improving: Colors.up, plateau: Colors.flat, declining: Colors.dn } as const;
+  const ML_TREND_LABEL = { improving: 'Improving', plateau: 'Plateau', declining: 'Declining' } as const;
+  const isMlTrend  = mlStatus?.available && mlStatus.trend;
+  const trendLabel = isMlTrend
+    ? ML_TREND_LABEL[mlStatus.trend!]
+    : streak >= 3 ? 'Improving' : streak >= 1 ? 'Active' : 'Getting Started';
+  const trendColor = isMlTrend
+    ? ML_TREND_COLOR[mlStatus.trend!]
+    : streak >= 3 ? Colors.up : streak >= 1 ? Colors.bone : Colors.t3;
 
   const achList     = storeAchievements.length > 0 ? storeAchievements : (progress?.achievements ?? []);
   const earnedAch   = achList.filter(a => a.earned);
@@ -367,15 +374,18 @@ export default function ProfileScreen() {
 
         {/* ── Hero Avatar ── */}
         <View style={s.heroSection}>
-          <View style={s.heroRing}>
-            <MomentumRing pct={momentum} color={theme.color} size={140} />
-            <View style={s.heroAvatar}>
-              <AvatarSVG themeId={themeId} stage={stage} size={90} />
-            </View>
-          </View>
+          <Image
+            source={getCharacterImage(themeId, stage)}
+            style={s.characterImg}
+          />
           <View style={[s.trendBadge, { borderColor: trendColor + '40' }]}>
             <View style={[s.trendDot, { backgroundColor: trendColor }]} />
             <Text style={[s.trendText, { color: trendColor }]}>{trendLabel}</Text>
+            {isMlTrend && mlStatus.confidence != null && (
+              <Text style={[s.trendConf, { color: trendColor }]}>
+                {Math.round(mlStatus.confidence * 100)}%
+              </Text>
+            )}
           </View>
           <Text style={s.scoreLabel}>ASCENT SCORE</Text>
           <Text style={s.scoreValue}>{score}</Text>
@@ -482,8 +492,8 @@ export default function ProfileScreen() {
                 value={xpPct}
                 color={theme.color}
                 height={6}
-                leftText={`${xpInLevel} / ${xpNext} XP`}
-                rightText={`Lv.${level + 1}`}
+                leftText={isMaxLevel ? 'MAX LEVEL' : `${xpInLevel} / ${xpNext} XP`}
+                rightText={isMaxLevel ? '' : `Lv.${level + 1}`}
               />
               <Text style={s.totalXp}>{xp} total XP</Text>
             </View>
@@ -610,17 +620,11 @@ const s = StyleSheet.create({
     marginBottom: Spacing.xl,
     paddingHorizontal: Spacing.xxl,
   },
-  heroRing: {
-    width: 140,
-    height: 140,
-    position: 'relative',
+  characterImg: {
+    width: SCREEN_H / 4,
+    height: SCREEN_H / 4,
+    resizeMode: 'contain',
     marginBottom: Spacing.md,
-  },
-  heroAvatar: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -45 }, { translateY: -55 }],
   },
   trendBadge: {
     flexDirection: 'row',
@@ -642,6 +646,12 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontFamily: Fonts.semiBold,
     letterSpacing: 0.3,
+  },
+  trendConf: {
+    fontSize: 10,
+    fontFamily: Fonts.mono,
+    opacity: 0.7,
+    marginLeft: 4,
   },
   scoreLabel: {
     fontSize: 9,

@@ -1,22 +1,21 @@
 // mobile/app/(tabs)/index.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Animated, ScrollView, StyleSheet, Text,
+  Animated, Dimensions, Image, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Svg, { Line, Path } from 'react-native-svg';
 
-import { Colors, Fonts, Radius, Spacing, AvatarThemes, getAvatarStage, type AvatarThemeId } from '../../constants/theme';
-import { AvatarSVG }     from '../../components/avatar/AvatarSVG';
-import { MomentumRing } from '../../components/avatar/MomentumRing';
+import { Colors, Fonts, Radius, Spacing, AvatarThemes, stageFromLevel, getCharacterImage, xpForLevel, type AvatarThemeId, type AvatarStage } from '../../constants/theme';
 import { Card }        from '../../components/ui/Card';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WorkoutLogScreen }          from '../../components/workout/WorkoutLogScreen';
 import { LevelUpModal }          from '../../components/modals/LevelUpModal';
 import { MissionCompleteModal }  from '../../components/modals/MissionCompleteModal';
 import { StageUpModal }          from '../../components/modals/StageUpModal';
+import { CharacterInfoModal }    from '../../components/modals/CharacterInfoModal';
 import { AchievementModal, type AchievementEarned } from '../../components/modals/AchievementModal';
 import { PRModal, type PRResult } from '../../components/modals/PRModal';
 import { SyncStatusIndicator }   from '../../components/SyncStatusIndicator';
@@ -26,32 +25,16 @@ import {
   selectTotalVolume,
 } from '../../store/workoutStore';
 import { useAuthStore } from '../../store/authStore';
-import { progressApi, missionApi, type UserMissionResponse } from '../../services/gamificationApi';
+import { progressApi, missionApi, coachApi, type UserMissionResponse, type CoachMessageResponse, type CoachTone } from '../../services/gamificationApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IFire()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>; }
 function IHistory() { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Path d="M3 3v5h5"/><Path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><Path d="M12 7v5l4 2"/></Svg>; }
 function IPlay()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill={Colors.bone} stroke="none"><Path d="M5 3l14 9-14 9V3z"/></Svg>; }
+function IInfo()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><Path d="M12 8h.01M12 12v4"/></Svg>; }
 
-const STAGE_NAMES  = ['Rookie', 'Active', 'Athlete', 'Champion', 'Legend'];
-const STAGE_THRESH = [0, 6, 16, 31, 51];
-
-function RippleEffect({ color }: { color: string }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(anim, { toValue: 1, duration: 750, useNativeDriver: true }).start();
-  }, []);
-  const scale   = anim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 2.4] });
-  const opacity = anim.interpolate({ inputRange: [0, 1], outputRange: [0.65, 0] });
-  return (
-    <Animated.View style={{
-      position: 'absolute', top: -8, left: -8, right: -8, bottom: -8,
-      borderRadius: 999,
-      borderWidth: 1.5, borderColor: color,
-      opacity, transform: [{ scale }],
-    }} />
-  );
-}
+const SCREEN_H = Dimensions.get('window').height;
+const fmtXP    = (n: number) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 export default function WorkoutScreen() {
   const router = useRouter();
@@ -67,27 +50,33 @@ export default function WorkoutScreen() {
   } = useWorkoutStore();
 
   const [showWorkoutLog, setShowWorkoutLog] = useState(false);
-  const [isCelebrating,  setIsCelebrating]  = useState(false);
 
   // Progress state — fetched from server on focus
-  const [totalWorkouts,    setTotalWorkouts]    = useState(0);
-  const [streak,           setStreak]           = useState(0);
+  const [streak,        setStreak]        = useState(0);
+  const [xp,            setXp]            = useState(0);
+  const [level,         setLevel]         = useState(1);
   const [activeMissions,   setActiveMissions]   = useState<UserMissionResponse[]>([]);
   const [completedMission, setCompletedMission] = useState<UserMissionResponse | null>(null);
+  const [coachMsg,         setCoachMsg]         = useState<CoachMessageResponse | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         try {
-          const [progressRes, missionsRes] = await Promise.all([
+          const [progressRes, missionsRes, coachRes] = await Promise.all([
             progressApi.get(),
             missionApi.getAll(),
+            coachApi.getMessages(5).catch(() => null),
           ]);
           if (!cancelled) {
-            setTotalWorkouts(progressRes.data.total_sessions ?? 0);
-            setStreak(progressRes.data.current_streak ?? 0);
+            const d = progressRes.data;
+            setStreak(d.current_streak ?? 0);
+            setXp(d.xp ?? 0);
+            setLevel(d.level ?? 1);
             setActiveMissions(missionsRes.data.active);
+            const firstUnread = coachRes?.data?.find(m => !m.is_read) ?? null;
+            setCoachMsg(firstUnread);
           }
         } catch {}
       })();
@@ -95,15 +84,23 @@ export default function WorkoutScreen() {
     }, [])
   );
 
-  // Hero derived values
-  const stage         = getAvatarStage(totalWorkouts);
-  const stageNext     = Math.min(stage + 1, 4) as typeof stage;
-  const stageProgress = stage < 4
-    ? Math.round((totalWorkouts - STAGE_THRESH[stage]) / (STAGE_THRESH[stageNext] - STAGE_THRESH[stage]) * 100)
-    : 100;
-  const toNextStage = stage < 4 ? STAGE_THRESH[stageNext] - totalWorkouts : 0;
-  const momentum    = Math.min(100, (totalWorkouts % 7) * 14 + 40);
-  const themeColor  = avatarTheme.color;
+  // Character
+  const characterId = user?.avatar_theme_id ?? 0;
+
+  // Info modal
+  const [infoVisible, setInfoVisible] = useState(false);
+
+  // Stage = level - 1 (level 1 → Rookie, level 5 → Legend)
+  const stage      = stageFromLevel(level);
+  const isMaxLevel = level >= 5;
+
+  // XP within current level
+  let xpUsed = 0;
+  for (let l = 1; l < level; l++) xpUsed += xpForLevel(l);
+  const xpInLevel = isMaxLevel ? 0 : Math.max(0, xp - xpUsed);
+  const xpNext    = xpForLevel(level); // 0 when max level
+  const xpPct     = isMaxLevel ? 100 : (xpNext > 0 ? Math.min(100, Math.round(xpInLevel / xpNext * 100)) : 100);
+
 
   // Modals
   const [levelUpVisible,      setLevelUpVisible]      = useState(false);
@@ -176,9 +173,6 @@ export default function WorkoutScreen() {
     const result         = await submitWorkout();
     if (result) {
       setShowWorkoutLog(false);
-      setIsCelebrating(true);
-      setTimeout(() => setIsCelebrating(false), 1000);
-
       const earned = result.achievements ?? [];
       const prs    = result.new_prs ?? [];
 
@@ -207,12 +201,14 @@ export default function WorkoutScreen() {
           progressApi.get(),
           missionApi.getAll(),
         ]);
-        const sessions = progressRes.data.total_sessions ?? 0;
-        setTotalWorkouts(sessions);
-        setStreak(progressRes.data.current_streak ?? 0);
-        const next = getAvatarStage(sessions);
-        if (next > prevStage) {
-          setNewStage(next);
+        const d2       = progressRes.data;
+        const nextLevel = d2.level ?? 1;
+        setStreak(d2.current_streak ?? 0);
+        setXp(d2.xp ?? 0);
+        setLevel(nextLevel);
+        const nextStage = stageFromLevel(nextLevel);
+        if (nextStage > prevStage) {
+          setNewStage(nextStage);
           setStageUpVisible(true);
         }
         const beforeActiveIds = new Set(missionsBefore.map(m => m.id));
@@ -256,27 +252,62 @@ export default function WorkoutScreen() {
 
         {/* ── Hero ── */}
         <View style={s.heroSection}>
-          <View style={s.ringContainer}>
-            <MomentumRing pct={momentum} color={themeColor} size={120} />
-            <View style={s.avatarInRing}>
-              <AvatarSVG
-                themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
-                stage={stage}
-                size={80}
-                celebrating={isCelebrating}
-              />
-            </View>
-            {isCelebrating && <RippleEffect color={themeColor} />}
+          <Image
+            source={getCharacterImage(characterId, stage)}
+            style={s.characterImg}
+          />
+
+          {/* Name + info */}
+          <View style={s.charNameRow}>
+            <Text style={s.charName}>{user?.name ?? ''}</Text>
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setInfoVisible(true)}
+            >
+              <IInfo />
+            </TouchableOpacity>
           </View>
 
-          <Text style={s.heroStageName}>{STAGE_NAMES[stage]}</Text>
-          <Text style={s.heroSessionCount}>
-            {totalWorkouts} sessions{toNextStage > 0 ? ` · ${toNextStage} to next stage` : ' · Max stage!'}
-          </Text>
-          <View style={s.heroBarWrap}>
-            <ProgressBar value={stageProgress} color={themeColor} height={3} />
+          {/* Level + XP */}
+          <View style={s.xpRow}>
+            <View style={s.levelGroup}>
+              <Text style={s.levelLabel}>LEVEL</Text>
+              <Text style={s.levelNum}>{level}</Text>
+            </View>
+            <Text style={s.xpText}>
+              {isMaxLevel ? 'MAX LEVEL' : `XP ${fmtXP(xpInLevel)} / ${fmtXP(xpNext)}`}
+            </Text>
           </View>
+
+          <ProgressBar value={xpPct} color={Colors.cr} height={4} />
         </View>
+
+        {/* ── Coach insight banner — latest unread ML-driven message ── */}
+        {coachMsg && (() => {
+          const TONE_COLOR: Record<CoachTone, string> = {
+            motivating: Colors.up,
+            neutral:    Colors.bone,
+            warning:    Colors.cr,
+          };
+          const c = TONE_COLOR[coachMsg.tone] ?? Colors.bone;
+          return (
+            <TouchableOpacity
+              style={[s.coachBanner, { borderLeftColor: c }]}
+              onPress={async () => {
+                const id = coachMsg.id;
+                setCoachMsg(null);                          // optimistic dismiss
+                try { await coachApi.markRead(id); } catch {}
+              }}
+              activeOpacity={0.8}
+            >
+              <View style={[s.coachDot, { backgroundColor: c }]}/>
+              <Text style={s.coachBannerText} numberOfLines={2}>
+                {coachMsg.message_text}
+              </Text>
+              <Text style={s.coachDismiss}>Got it</Text>
+            </TouchableOpacity>
+          );
+        })()}
 
         {/* ── Active mission ── */}
         <Card variant="crimson">
@@ -412,6 +443,13 @@ export default function WorkoutScreen() {
         visible={prModalVisible}
         onClose={() => { setPrModalVisible(false); setNewPRs([]); }}
       />
+
+      <CharacterInfoModal
+        visible={infoVisible}
+        characterId={characterId}
+        currentStage={stage}
+        onClose={() => setInfoVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -475,10 +513,50 @@ const s = StyleSheet.create({
   historyLink: { flexDirection: 'row', alignItems: 'center', gap: 7, justifyContent: 'center', paddingVertical: 12, marginTop: 8 },
   historyText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.t3 },
 
-  heroSection:      { alignItems: 'center', paddingBottom: 18 },
-  ringContainer:    { position: 'relative', width: 120, height: 120 },
-  avatarInRing:     { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -40 }, { translateY: -44 }] },
-  heroStageName:    { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t1, marginTop: 12, letterSpacing: 0.3 },
-  heroSessionCount: { fontSize: 12, fontFamily: Fonts.mono, color: Colors.t3, marginTop: 3 },
-  heroBarWrap:      { width: '48%', marginTop: 10 },
+  heroSection:  { paddingHorizontal: Spacing.xxl, paddingBottom: 20 },
+  characterImg: { width: SCREEN_H / 3, height: SCREEN_H / 3, resizeMode: 'contain', alignSelf: 'center' },
+
+  charNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 6, marginBottom: 16 },
+  charName:    { fontSize: 22, fontFamily: Fonts.displayBold, color: Colors.bone, letterSpacing: -0.3 },
+
+  xpRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 },
+  levelGroup: { flexDirection: 'row', alignItems: 'flex-end', gap: 5 },
+  levelLabel: { fontSize: 10, fontFamily: Fonts.bold, color: Colors.t3, letterSpacing: 2, marginBottom: 7, textTransform: 'uppercase' },
+  levelNum:   { fontSize: 44, fontFamily: Fonts.displayBold, color: Colors.bone, lineHeight: 46 },
+  xpText:     { fontSize: 13, fontFamily: Fonts.mono, color: Colors.t2, marginBottom: 6 },
+
+  // ── Coach banner ──
+  coachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.s2,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderLeftWidth: 3,
+    borderRadius: Radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  coachDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  coachBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: Colors.t1,
+    lineHeight: 18,
+  },
+  coachDismiss: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.8,
+    color: Colors.t3,
+    textTransform: 'uppercase',
+  },
 });

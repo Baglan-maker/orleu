@@ -1,15 +1,14 @@
 // mobile/app/(auth)/register.tsx
 import { useState } from 'react';
 import {
-  KeyboardAvoidingView, Platform, ScrollView,
+  Image, KeyboardAvoidingView, Platform, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthStore, RegisterData } from '../../store/authStore';
-import { Colors, Fonts, Spacing, Radius, AvatarThemes, type AvatarThemeId } from '../../constants/theme';
-import { AvatarSVG } from '../../components/avatar/AvatarSVG';
+import { Colors, Fonts, Spacing, Radius, CHARACTERS, getCharacterImage } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { Input  } from '../../components/ui/Input';
 
@@ -151,28 +150,29 @@ export default function RegisterScreen() {
           {/* ── Step 1: Avatar + Goals ── */}
           {step === 1 && (
             <View>
-              {/* Avatar picker */}
-              <Text style={styles.sectionLabel}>CHOOSE AVATAR</Text>
-              <View style={styles.avatarRow}>
-                {AvatarThemes.map(t => (
-                  <TouchableOpacity
-                    key={t.id}
-                    onPress={() => setAvatarId(t.id)}
-                    style={[
-                      styles.avatarBox,
-                      avatarId === t.id && { borderColor: Colors.cr, backgroundColor: `${Colors.cr}12` },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <AvatarSVG themeId={t.id as AvatarThemeId} stage={0} size={42} />
-                    <Text style={[
-                      styles.avatarName,
-                      avatarId === t.id && { color: Colors.cr },
-                    ]}>
-                      {t.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              {/* Character picker */}
+              <Text style={styles.sectionLabel}>CHOOSE YOUR CHARACTER</Text>
+              <View style={styles.charGrid}>
+                {CHARACTERS.map(c => {
+                  const selected = avatarId === c.id;
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      onPress={() => setAvatarId(c.id)}
+                      style={[styles.charCard, selected && styles.charCardSelected]}
+                      activeOpacity={0.8}
+                    >
+                      <Image
+                        source={getCharacterImage(c.id, 0)}
+                        style={styles.charPreview}
+                      />
+                      <Text style={[styles.charName, selected && { color: Colors.cr }]}>
+                        {c.name}
+                      </Text>
+                      {selected && <View style={styles.charCheckDot} />}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {/* Experience */}
@@ -277,13 +277,30 @@ const styles = StyleSheet.create({
 
   sectionLabel: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, marginBottom: 10 },
 
-  avatarRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
-  avatarBox: {
-    flex: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 8,
-    backgroundColor: Colors.s3, borderRadius: 14,
+  // ── Character grid (scales to 5-6 chars, 2 per row) ──
+  charGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
+  },
+  charCard: {
+    width: '47%', alignItems: 'center',
+    paddingVertical: 16, paddingHorizontal: 8,
+    backgroundColor: Colors.s3, borderRadius: 16,
     borderWidth: 1.5, borderColor: Colors.line,
   },
-  avatarName: { fontSize: 9, fontFamily: Fonts.bold, color: Colors.t3, letterSpacing: 1, marginTop: 2 },
+  charCardSelected: {
+    borderColor: Colors.cr, backgroundColor: Colors.crLo,
+  },
+  charPreview: {
+    width: 100, height: 100, resizeMode: 'contain',
+  },
+  charName: {
+    fontSize: 11, fontFamily: Fonts.bold, color: Colors.t2,
+    letterSpacing: 0.8, marginTop: 8, textTransform: 'uppercase',
+  },
+  charCheckDot: {
+    position: 'absolute', top: 10, right: 10,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.cr,
+  },
 
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

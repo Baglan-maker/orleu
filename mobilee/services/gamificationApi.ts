@@ -113,6 +113,31 @@ export interface AvailableMissionsResponse {
   active:    UserMissionResponse[];
   completed: UserMissionResponse[];
   available: MissionTemplateResponse[];
+  trend:     MlTrend | null;          // current ML-driven ordering — null if cold start
+}
+
+// ─── ML / Coach types ───────────────────────────────────────────
+export type MlTrend = 'improving' | 'plateau' | 'declining';
+export type CoachTone = 'motivating' | 'neutral' | 'warning';
+
+export interface MlStatusResponse {
+  available:         boolean;
+  trend?:            MlTrend;
+  confidence?:       number;
+  prediction_date?:  string;
+  top_feature?:      string;
+  features?:         Record<string, number>;
+  shap_values?:      Record<string, number>;
+  cold_start_reason?: string;
+}
+
+export interface CoachMessageResponse {
+  id:           string;
+  message_text: string;
+  tone:         CoachTone;
+  trend:        MlTrend | null;
+  is_read:      boolean;
+  created_at:   string;
 }
 
 // ─── API ────────────────────────────────────────────────────────
@@ -147,18 +172,15 @@ export const missionApi = {
     api.post<UserMissionResponse>(`/api/missions/${templateId}/accept`),
 };
 
-export interface CoachMessage {
-  id:           string;
-  message:      string;
-  message_type: string;
-  created_at:   string;
-  is_read:      boolean;
-}
-
 export const coachApi = {
-  getMessages: () =>
-    api.get<CoachMessage[]>('/api/coach/messages'),
+  getMessages: (limit = 20) =>
+    api.get<CoachMessageResponse[]>(`/api/coach?limit=${limit}`),
 
   markRead: (id: string) =>
-    api.patch(`/api/coach/messages/${id}/read`),
+    api.patch(`/api/coach/${id}/read`),
+};
+
+export const mlApi = {
+  status: () =>
+    api.get<MlStatusResponse>('/api/progress/ml-status'),
 };

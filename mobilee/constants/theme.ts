@@ -89,10 +89,45 @@ export const Colors = {
   export type AvatarThemeId = 0 | 1 | 2 | 3;
   export type AvatarStage   = 0 | 1 | 2 | 3 | 4;
 
-  export function getAvatarStage(totalWorkouts: number): AvatarStage {
-    if (totalWorkouts < 6)  return 0;
-    if (totalWorkouts < 16) return 1;
-    if (totalWorkouts < 31) return 2;
-    if (totalWorkouts < 51) return 3;
-    return 4;
+  // Stage is purely derived from level: level 1 → stage 0, level 5 → stage 4
+  export function stageFromLevel(level: number): AvatarStage {
+    return Math.min(4, Math.max(0, level - 1)) as AvatarStage;
+  }
+
+  // character roster — id maps to user.avatar_theme_id
+  export const CHARACTERS = [
+    { id: 0, name: 'Ares'    },
+    { id: 1, name: 'Phantom' },
+  ] as const;
+
+  // XP required to advance from level `lvl` to the next.
+  // 5 levels total; level 5 is the cap (returns 0 → "MAX").
+  // Must stay in sync with backend/app/api/workouts.py _XP_THRESHOLDS.
+  const _XP_PER_LEVEL = [500, 1_500, 4_000, 9_000] as const;
+
+  export function xpForLevel(lvl: number): number {
+    if (lvl < 1 || lvl >= 5) return 0; // level 5 = max, no further XP gate
+    return _XP_PER_LEVEL[lvl - 1];
+  }
+
+  // [characterId][stage] → require(PNG)  stage 0 = lvl1, stage 4 = lvl5
+  const _CHARACTER_IMAGES: Record<number, Record<AvatarStage, number>> = {
+    0: {
+      0: require('../assets/character1-lvl1.png'),
+      1: require('../assets/character1-lvl2.png'),
+      2: require('../assets/character1-lvl3.png'),
+      3: require('../assets/character1-lvl4.png'),
+      4: require('../assets/character1-lvl5.png'),
+    },
+    1: {
+      0: require('../assets/character2-lvl1.png'),
+      1: require('../assets/character2-lvl2.png'),
+      2: require('../assets/character2-lvl3.png'),
+      3: require('../assets/character2-lvl4.png'),
+      4: require('../assets/character2-lvl5.png'),
+    },
+  };
+
+  export function getCharacterImage(characterId: number, stage: AvatarStage): number {
+    return (_CHARACTER_IMAGES[characterId] ?? _CHARACTER_IMAGES[0])[stage];
   }

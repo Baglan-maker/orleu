@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 from app.db.database import get_db
 from app.models import User, UserProgress, MissionTemplate, UserMission
+from app.models.ml import MlPrediction
 from app.schemas.gamification import (
     MissionTemplateOut,
     UserMissionOut,
@@ -97,10 +98,26 @@ def get_missions(
         tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
         available.append(tmpl_out)
 
+    # ML-driven ordering: nudge users toward missions matching their current trend.
+    # base_xp is the difficulty proxy — designer-tuned reward per mission.
+    latest_pred = (
+        db.query(MlPrediction)
+        .filter(MlPrediction.user_id == current_user.id)
+        .order_by(MlPrediction.prediction_date.desc())
+        .first()
+    )
+    trend = latest_pred.trend if latest_pred else None
+    if trend == "improving":
+        available.sort(key=lambda m: m.base_xp, reverse=True)   # hardest first
+    elif trend == "declining":
+        available.sort(key=lambda m: m.base_xp)                 # easiest first
+    # plateau → leave default order (no nudge in either direction)
+
     return AvailableMissionsOut(
         active=active_out,
         completed=completed_out,
         available=available,
+        trend=trend,
     )
 
 

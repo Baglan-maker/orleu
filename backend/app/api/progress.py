@@ -1,9 +1,14 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models import User, UserProgress, Campaign, CampaignChapter, Workout, Achievement, UserAchievement
+from app.models.ml import MlPrediction
 from app.schemas.gamification import ProgressOut, PatchProgressRequest, AchievementOut
+from app.schemas.ml import MlStatusOut
 from app.services.dependencies import get_current_user
 from app.services.gamification_service import try_advance_chapter
 
@@ -87,6 +92,61 @@ def get_progress(
         for a in db.query(Achievement).all()
     ]
     return _build_progress_out(progress, total_sessions, achievements)
+
+
+@router.get("/ml-status", response_model=MlStatusOut)
+def get_ml_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns the most recent ML prediction for the current user.
+    Cold start: <14 days registered OR <3 workouts → available=False with reason.
+    """
+    # Eligibility check — same rules as nightly_ml.py so the message stays consistent
+    age = datetime.now(timezone.utc) - current_user.created_at
+    if age < timedelta(days=14):
+        days_left = 14 - age.days
+        return MlStatusOut(
+            available=False,
+            cold_start_reason=f"Need {days_left} more days of activity for ML predictions",
+        )
+
+    workout_count = (
+        db.query(func.count(Workout.id))
+        .filter(Workout.user_id == current_user.id)
+        .scalar()
+    ) or 0
+    if workout_count < 3:
+        return MlStatusOut(
+            available=False,
+            cold_start_reason=f"Log {3 - workout_count} more workout(s) to unlock ML insights",
+        )
+
+    pred = (
+        db.query(MlPrediction)
+        .filter(MlPrediction.user_id == current_user.id)
+        .order_by(MlPrediction.prediction_date.desc())
+        .first()
+    )
+    if not pred:
+        return MlStatusOut(
+            available=False,
+            cold_start_reason="ML prediction pending — runs nightly at 00:00 UTC",
+        )
+
+    shap = pred.shap_values or {}
+    top_feature = max(shap.items(), key=lambda kv: kv[1])[0] if shap else None
+
+    return MlStatusOut(
+        available=True,
+        trend=pred.trend,
+        confidence=pred.confidence,
+        prediction_date=pred.prediction_date,
+        top_feature=top_feature,
+        features=pred.features_json,
+        shap_values=shap,
+    )
 
 
 @router.patch("", response_model=ProgressOut)

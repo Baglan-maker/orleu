@@ -14,8 +14,11 @@ import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import {
   missionApi,
+  coachApi,
   UserMissionResponse,
   MissionTemplateResponse,
+  MlTrend,
+  CoachMessageResponse,
 } from '../../services/gamificationApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -48,6 +51,8 @@ export default function MissionsScreen() {
   const [activeMissions,    setActiveMissions]    = useState<UserMissionResponse[]>([]);
   const [completedMissions, setCompletedMissions] = useState<UserMissionResponse[]>([]);
   const [availableTemplates, setAvailableTemplates] = useState<MissionTemplateResponse[]>([]);
+  const [trend, setTrend]             = useState<MlTrend | null>(null);
+  const [coachMsg, setCoachMsg]       = useState<CoachMessageResponse | null>(null);
   const [selected, setSelected]       = useState<string[]>([]);
   const [loading, setLoading]         = useState(true);
   const [accepting, setAccepting]     = useState(false);
@@ -55,10 +60,15 @@ export default function MissionsScreen() {
 
   const fetchMissions = useCallback(async () => {
     try {
-      const { data } = await missionApi.getAll();
-      setActiveMissions(data.active);
-      setCompletedMissions(data.completed ?? []);
-      setAvailableTemplates(data.available);
+      const [missionsRes, coachRes] = await Promise.all([
+        missionApi.getAll(),
+        coachApi.getMessages(1).catch(() => null),  // coach is optional, don't break missions if it fails
+      ]);
+      setActiveMissions(missionsRes.data.active);
+      setCompletedMissions(missionsRes.data.completed ?? []);
+      setAvailableTemplates(missionsRes.data.available);
+      setTrend(missionsRes.data.trend ?? null);
+      setCoachMsg(coachRes?.data?.[0] ?? null);
     } catch {
       // Keep existing state
     } finally {
@@ -124,24 +134,42 @@ export default function MissionsScreen() {
             <Text style={s.lbl}>Weekly</Text>
             <Text style={s.pageTitle}>Missions</Text>
           </View>
-          <View style={s.trendBadge}>
-            <IUp/>
-            <Text style={s.trendText}>
-              {activeMissions.length} active
-            </Text>
-          </View>
+          {(() => {
+            // ML trend badge in header — only when ML has signal; falls back to active count
+            const TREND_LABEL = { improving: 'IMPROVING', plateau: 'PLATEAU', declining: 'DECLINING' } as const;
+            const TREND_COLOR = { improving: Colors.up, plateau: Colors.flat, declining: Colors.dn } as const;
+            if (trend) {
+              const c = TREND_COLOR[trend];
+              return (
+                <View style={[s.trendBadge, { backgroundColor: `${c}15`, borderColor: `${c}25` }]}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }}/>
+                  <Text style={[s.trendText, { color: c }]}>{TREND_LABEL[trend]}</Text>
+                </View>
+              );
+            }
+            return (
+              <View style={s.trendBadge}>
+                <IUp/>
+                <Text style={s.trendText}>{activeMissions.length} active</Text>
+              </View>
+            );
+          })()}
         </View>
 
-        {/* ── AI Coach insight ── */}
+        {/* ── AI Coach insight — real ML message when available, fallback otherwise ── */}
         <Card variant="bone">
           <View style={s.coachRow}>
             <View style={s.coachIcon}><IBrain/></View>
             <View style={{ flex: 1 }}>
-              <Text style={s.coachLbl}>AI COACH · WEEK INSIGHT</Text>
+              <Text style={s.coachLbl}>
+                {coachMsg ? 'AI COACH · INSIGHT' : 'AI COACH · WEEK INSIGHT'}
+              </Text>
               <Text style={s.coachText}>
-                {activeMissions.length > 0
-                  ? 'Keep pushing — your missions scale with your progress.'
-                  : 'Pick up to 2 missions to earn bonus XP and coins this week.'}
+                {coachMsg
+                  ? coachMsg.message_text
+                  : activeMissions.length > 0
+                    ? 'Keep pushing — your missions scale with your progress.'
+                    : 'Pick up to 2 missions to earn bonus XP and coins this week.'}
               </Text>
             </View>
           </View>
@@ -270,12 +298,14 @@ export default function MissionsScreen() {
                 Select up to {2 - activeMissions.length} mission{2 - activeMissions.length === 1 ? '' : 's'}
               </Text>
             )}
-            {availableTemplates.map(t => {
+            {availableTemplates.map((t, idx) => {
               const diff    = getDifficulty(t.base_xp);
               const tc      = TYPE_COLOR[diff];
               const isOn    = selected.includes(t.id);
               const locked  = activeMissions.length >= 2;
               const desc    = t.description_template.replace('{target}', String(Math.round(t.base_target)));
+              // First mission carries the "Recommended" badge when ML reordered the list
+              const isRecommended = idx === 0 && (trend === 'improving' || trend === 'declining');
 
               return (
                 <TouchableOpacity
@@ -289,6 +319,13 @@ export default function MissionsScreen() {
                   ]}
                 >
                   <View style={[s.stripe, { backgroundColor: tc }]}/>
+                  {isRecommended && (
+                    <View style={s.recommendedBadge}>
+                      <Text style={s.recommendedText}>
+                        {trend === 'improving' ? 'CHALLENGE PICK' : 'EASY START'}
+                      </Text>
+                    </View>
+                  )}
                   <View style={s.mHead}>
                     <View>
                       <Text style={s.mName}>{t.name}</Text>
@@ -414,4 +451,22 @@ const s = StyleSheet.create({
     marginBottom: 12, marginTop: 8,
   },
   limitBannerText: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.cr, lineHeight: 18 },
+
+  recommendedBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: Colors.crLo,
+    borderWidth: 1,
+    borderColor: Colors.crBdr,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  recommendedText: {
+    fontSize: 9,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.8,
+    color: Colors.cr,
+  },
 });

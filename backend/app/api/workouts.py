@@ -24,17 +24,23 @@ router = APIRouter()
 BASE_XP_PER_WORKOUT = 50
 XP_PER_EXERCISE     = 10
 XP_PER_1000KG_VOL   = 15
-XP_FOR_LEVEL        = lambda lvl: int(100 * (1.15 ** (lvl - 1)))
+MAX_LEVEL           = 5
+# XP required to complete each level (index 0 = level 1 → 2, etc.)
+# Must stay in sync with mobilee/constants/theme.ts xpForLevel()
+_XP_THRESHOLDS      = [500, 1_500, 4_000, 9_000]
 
 
 def _recalculate_level(total_xp: int) -> int:
-    """Derive level from total XP. Single source of truth for level calculation."""
-    xp_remaining = total_xp
+    """Derive level (1–5) from cumulative XP. Capped at MAX_LEVEL."""
+    xp = total_xp
     level = 1
-    while xp_remaining >= XP_FOR_LEVEL(level):
-        xp_remaining -= XP_FOR_LEVEL(level)
-        level += 1
-    return level
+    for threshold in _XP_THRESHOLDS:
+        if xp >= threshold:
+            xp -= threshold
+            level += 1
+        else:
+            break
+    return min(level, MAX_LEVEL)
 
 
 def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExercise]):

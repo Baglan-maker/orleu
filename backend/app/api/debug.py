@@ -18,6 +18,7 @@ from app.models import (
 from app.models.workout import WorkoutExercise
 from app.services.dependencies import get_current_user
 from app.services.gamification_service import check_and_award_achievements, try_advance_chapter
+from app.tasks.nightly_ml import run_nightly_predictions
 
 router = APIRouter()
 
@@ -238,6 +239,14 @@ def time_travel(
         new_achievements=new_achievements,
         chapter_advanced=chapter_advanced,
     )
+
+
+@router.post("/run-ml")
+def trigger_ml(db: Session = Depends(get_db)):
+    """Manually run nightly ML predictions. Dev only."""
+    _require_dev()
+    processed = run_nightly_predictions()
+    return {"processed_users": processed}
 
 
 @router.post("/seed-workout-history", response_model=SeedWorkoutHistoryResponse)
