@@ -20,7 +20,9 @@ import {
   localDateISO,
   type MealType,
   type NutritionLogEntry,
+  type NutritionDayResponse,
 } from '../../store/nutritionStore';
+import { api } from '../../services/api';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IChevronLeft() {
@@ -92,6 +94,42 @@ function macroRatio(kcal: number, p: number, c: number, f: number): { p: number;
   };
 }
 
+/** Expected % of daily intake by current time, anchored to an 8am–9pm eating window. */
+function dayPacePct(): number {
+  const d = new Date();
+  const minutes = d.getHours() * 60 + d.getMinutes();
+  const start = 8 * 60;            // 08:00
+  const end   = 21 * 60;           // 21:00
+  if (minutes <= start) return 0;
+  if (minutes >= end) return 100;
+  return Math.round(((minutes - start) / (end - start)) * 100);
+}
+
+const DATE_STRIP_DAYS = 14;
+
+interface DateStripItem { iso: string; weekday: string; day: string; isToday: boolean; isFuture: boolean }
+
+function buildDateStrip(selected: string): DateStripItem[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIso = localDateISO(today);
+  const items: DateStripItem[] = [];
+  // Render last (DATE_STRIP_DAYS - 1) days plus today, oldest first so today sits on the right
+  for (let i = DATE_STRIP_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const iso = localDateISO(d);
+    items.push({
+      iso,
+      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+      day: String(d.getDate()),
+      isToday: iso === todayIso,
+      isFuture: false,
+    });
+  }
+  return items;
+}
+
 // ─── Component ───────────────────────────────────────────────────
 export default function NutritionScreen() {
   const {
@@ -99,8 +137,9 @@ export default function NutritionScreen() {
     loadDay, loadGoals, logFood, removeLog, setDate, syncPending,
   } = useNutritionStore();
 
-  const [modalMeal, setModalMeal]   = useState<MealType | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [modalMeal,  setModalMeal]   = useState<MealType | null>(null);
+  const [deletingId, setDeletingId]  = useState<string | null>(null);
+  const [copyingMeal, setCopyingMeal] = useState<MealType | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -130,6 +169,28 @@ export default function NutritionScreen() {
   // ── Add food ─────────────────────────────────────────────────
   async function handleAddFood(data: FoodLogData) {
     await logFood(selectedDate, data.mealType, data.foodItem.id, data.quantityG);
+  }
+
+  // ── Copy yesterday's entries for a meal — surfaces only on empty meals so
+  //    one tap re-logs every food item the user ate at the same meal yesterday.
+  async function copyFromYesterday(mealType: MealType) {
+    setCopyingMeal(mealType);
+    try {
+      const yesterday = shiftDate(selectedDate, -1);
+      const { data } = await api.get<NutritionDayResponse>('/api/nutrition/daily', { params: { date: yesterday } });
+      const entries = data?.meals?.[mealType]?.entries ?? [];
+      if (entries.length === 0) {
+        Alert.alert('Nothing to copy', `You didn't log ${mealType} yesterday.`);
+        return;
+      }
+      for (const e of entries) {
+        await logFood(selectedDate, mealType, e.food_item.id, e.quantity_g);
+      }
+    } catch {
+      Alert.alert('Could not copy', 'Try again or add foods manually.');
+    } finally {
+      setCopyingMeal(null);
+    }
   }
 
   // ── Remove food ───────────────────────────────────────────────
@@ -167,6 +228,10 @@ export default function NutritionScreen() {
   const anyOver = totalCal > goalCal || totalPro > goalPro || totalCarb > goalCarb || totalFat > goalFat;
   const ratio   = macroRatio(totalCal, totalPro, totalCarb, totalFat);
 
+  // Pace marker only makes sense for today — past days are "done", future days haven't started.
+  const pacePct: number | undefined = isToday ? dayPacePct() : undefined;
+  const dateStrip = buildDateStrip(selectedDate);
+
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* ── Header ── */}
@@ -194,9 +259,39 @@ export default function NutritionScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
+        {/* ── Date strip — last 14 days, scroll-snap to selected ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.dateStrip}
+        >
+          {dateStrip.map(item => {
+            const selected = item.iso === selectedDate;
+            return (
+              <TouchableOpacity
+                key={item.iso}
+                style={[s.dateChip, selected && s.dateChipActive, item.isToday && !selected && s.dateChipToday]}
+                onPress={() => setDate(item.iso)}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.dateChipDow, selected && s.dateChipTextActive]}>{item.weekday}</Text>
+                <Text style={[s.dateChipNum, selected && s.dateChipTextActive]}>{item.day}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
         {/* ── Macro summary card ── */}
         <View style={[s.macroCard, anyOver && s.macroCardOver]}>
-          <Text style={s.macroCardTitle}>Daily Macros</Text>
+          <View style={s.macroCardHeader}>
+            <Text style={s.macroCardTitle}>Daily Macros</Text>
+            {pacePct != null && (
+              <View style={s.paceLegend}>
+                <View style={s.paceLegendLine}/>
+                <Text style={s.paceLegendText}>Pace · {pacePct}%</Text>
+              </View>
+            )}
+          </View>
 
           {/* Calories */}
           <View style={s.macroRow}>
@@ -207,7 +302,7 @@ export default function NutritionScreen() {
                 {' / '}{goalCal.toLocaleString()} kcal
               </Text>
             </View>
-            <ProgressBar value={pct(totalCal, goalCal)} color={Colors.cr} height={5} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalCal, goalCal)} color={Colors.cr} height={5} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
           {/* Protein */}
@@ -216,7 +311,7 @@ export default function NutritionScreen() {
               <Text style={s.macroName}>Protein</Text>
               <Text style={s.macroVal}>{Math.round(totalPro)} / {goalPro}g</Text>
             </View>
-            <ProgressBar value={pct(totalPro, goalPro)} color={Colors.macroProtein} height={4} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalPro, goalPro)} color={Colors.macroProtein} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
           {/* Carbs */}
@@ -225,7 +320,7 @@ export default function NutritionScreen() {
               <Text style={s.macroName}>Carbs</Text>
               <Text style={s.macroVal}>{Math.round(totalCarb)} / {goalCarb}g</Text>
             </View>
-            <ProgressBar value={pct(totalCarb, goalCarb)} color={Colors.macroCarbs} height={4} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalCarb, goalCarb)} color={Colors.macroCarbs} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
           {/* Fat */}
@@ -234,7 +329,7 @@ export default function NutritionScreen() {
               <Text style={s.macroName}>Fat</Text>
               <Text style={s.macroVal}>{Math.round(totalFat)} / {goalFat}g</Text>
             </View>
-            <ProgressBar value={pct(totalFat, goalFat)} color={Colors.macroFat} height={4} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalFat, goalFat)} color={Colors.macroFat} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
           {/* Macro ratio chips */}
@@ -309,13 +404,25 @@ export default function NutritionScreen() {
                   </TouchableOpacity>
                 ))
               ) : (
-                <TouchableOpacity
-                  style={s.emptyMealRow}
-                  onPress={() => setModalMeal(meal.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={s.emptyMealText}>+ Add food</Text>
-                </TouchableOpacity>
+                <View style={s.emptyMealRow}>
+                  <TouchableOpacity
+                    style={s.emptyMealAdd}
+                    onPress={() => setModalMeal(meal.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.emptyMealText}>+ Add food</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.copyYdayBtn, copyingMeal === meal.key && { opacity: 0.5 }]}
+                    onPress={() => copyFromYesterday(meal.key)}
+                    disabled={copyingMeal !== null}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.copyYdayText}>
+                      {copyingMeal === meal.key ? 'Copying…' : 'Copy yesterday'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           );
@@ -417,6 +524,72 @@ const s = StyleSheet.create({
   deleteBtn:  { padding: 6, marginLeft: 8 },
   deletingText: { fontSize: 14, color: Colors.t3 },
 
-  emptyMealRow:  { paddingHorizontal: Spacing.lg, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.line, borderStyle: 'dashed' },
-  emptyMealText: { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t3, textAlign: 'center' },
+  emptyMealRow:  {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderTopWidth: 1, borderTopColor: Colors.line, borderStyle: 'dashed',
+  },
+  emptyMealAdd: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  emptyMealText: { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t3 },
+  copyYdayBtn: {
+    paddingHorizontal: Spacing.lg, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderLeftWidth: 1, borderLeftColor: Colors.line,
+    backgroundColor: Colors.s3,
+  },
+  copyYdayText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr, letterSpacing: 0.3 },
+
+  // Date strip
+  dateStrip: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    gap: 6,
+  },
+  dateChip: {
+    width: 44,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: Colors.s2,
+    borderWidth: 1, borderColor: Colors.line,
+    borderRadius: Radius.md,
+  },
+  dateChipToday: {
+    borderColor: Colors.crBdr,
+  },
+  dateChipActive: {
+    backgroundColor: Colors.cr,
+    borderColor: Colors.cr,
+  },
+  dateChipDow: {
+    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 1, color: Colors.t3,
+    marginBottom: 2,
+  },
+  dateChipNum: {
+    fontSize: 15, fontFamily: Fonts.monoBold, color: Colors.t1,
+  },
+  dateChipTextActive: { color: Colors.bone },
+
+  // Macro card header + pace legend
+  macroCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  paceLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  paceLegendLine: {
+    width: 2, height: 12, borderRadius: 1,
+    backgroundColor: 'rgba(232, 224, 212, 0.55)',
+  },
+  paceLegendText: {
+    fontSize: 10, fontFamily: Fonts.monoBold, letterSpacing: 0.4, color: Colors.t3,
+  },
 });
