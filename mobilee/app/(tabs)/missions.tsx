@@ -15,11 +15,13 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import {
   missionApi,
   coachApi,
+  progressApi,
   UserMissionResponse,
   MissionTemplateResponse,
   MlTrend,
   CoachMessageResponse,
 } from '../../services/gamificationApi';
+import { getDismissedExpiries, addDismissedExpiry } from '../../services/storage';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
@@ -47,12 +49,24 @@ const TYPE_DOTS: Record<DifficultyLevel, number> = {
   hard: 4, medium: 3, easy: 1,
 };
 
+// Short motivational tagline appended below the bare {target}-substituted description.
+// Keyed by mission template `type` so flavor stays consistent without backend churn.
+const FLAVOR_TEXT: Record<string, string> = {
+  workout_count:    'Build the habit — one session at a time.',
+  total_reps:       'Push your limits across any exercises this week.',
+  total_volume:     'Move serious weight — every kilo counts.',
+  unique_exercises: 'Mix it up — train new movement patterns.',
+  muscle_sets:      'Quality work, set after set.',
+};
+
 export default function MissionsScreen() {
   const [activeMissions,    setActiveMissions]    = useState<UserMissionResponse[]>([]);
   const [completedMissions, setCompletedMissions] = useState<UserMissionResponse[]>([]);
+  const [expiredMissions,   setExpiredMissions]   = useState<UserMissionResponse[]>([]);
   const [availableTemplates, setAvailableTemplates] = useState<MissionTemplateResponse[]>([]);
   const [trend, setTrend]             = useState<MlTrend | null>(null);
   const [coachMsg, setCoachMsg]       = useState<CoachMessageResponse | null>(null);
+  const [userLevel, setUserLevel]     = useState<number>(1);
   const [selected, setSelected]       = useState<string[]>([]);
   const [loading, setLoading]         = useState(true);
   const [accepting, setAccepting]     = useState(false);
@@ -60,14 +74,19 @@ export default function MissionsScreen() {
 
   const fetchMissions = useCallback(async () => {
     try {
-      const [missionsRes, coachRes] = await Promise.all([
+      const [missionsRes, coachRes, progressRes, dismissed] = await Promise.all([
         missionApi.getAll(),
         coachApi.getMessages(5).catch(() => null),  // coach is optional, don't break missions if it fails
+        progressApi.get().catch(() => null),         // level is optional; default to 1 on failure
+        getDismissedExpiries(),
       ]);
       setActiveMissions(missionsRes.data.active);
       setCompletedMissions(missionsRes.data.completed ?? []);
+      const expired = (missionsRes.data.expired ?? []).filter(m => !dismissed.includes(m.id));
+      setExpiredMissions(expired);
       setAvailableTemplates(missionsRes.data.available);
       setTrend(missionsRes.data.trend ?? null);
+      if (progressRes) setUserLevel(progressRes.data.level);
       // Prefer latest unread; fall back to latest read so the AI Coach card always has content
       const msgs = coachRes?.data ?? [];
       setCoachMsg(msgs.find(m => !m.is_read) ?? msgs[0] ?? null);
@@ -76,6 +95,11 @@ export default function MissionsScreen() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const dismissExpired = useCallback(async (id: string) => {
+    await addDismissedExpiry(id);
+    setExpiredMissions(prev => prev.filter(m => m.id !== id));
   }, []);
 
   useFocusEffect(
@@ -158,6 +182,27 @@ export default function MissionsScreen() {
           })()}
         </View>
 
+        {/* ── Expired-mission banners — surfaced once per mission, dismiss-to-acknowledge ── */}
+        {expiredMissions.length > 0 && (
+          <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.md }}>
+            {expiredMissions.map(m => (
+              <View key={m.id} style={s.expiredBanner}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.expiredLbl}>MISSION EXPIRED</Text>
+                  <Text style={s.expiredText}>{m.name} — missions reset weekly.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => dismissExpired(m.id)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={s.expiredDismiss}
+                >
+                  <Text style={s.expiredDismissText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* ── AI Coach insight — real ML message when available, fallback otherwise ── */}
         <Card variant="bone">
           <View style={s.coachRow}>
@@ -180,13 +225,21 @@ export default function MissionsScreen() {
         {/* ── Active missions ── */}
         {activeMissions.length > 0 && (
           <View style={{ paddingHorizontal: Spacing.lg }}>
-            <Text style={[s.lbl, { marginBottom: 12 }]}>Active missions</Text>
+            <View style={s.activeHeader}>
+              <Text style={s.lbl}>Active missions</Text>
+              <View style={[s.slotBadge, activeMissions.length >= 2 && s.slotBadgeFull]}>
+                <Text style={[s.slotBadgeText, activeMissions.length >= 2 && s.slotBadgeTextFull]}>
+                  {activeMissions.length}/2 SLOTS
+                </Text>
+              </View>
+            </View>
             {activeMissions.map(m => {
               const diff = getDifficulty(m.xp_reward);
               const pct = m.adjusted_target > 0
                 ? Math.min(100, Math.round((m.current_progress / m.adjusted_target) * 100))
                 : 0;
               const tc = TYPE_COLOR[diff];
+              const flavor = FLAVOR_TEXT[m.type];
 
               return (
                 <View key={m.id} style={s.mcard}>
@@ -206,6 +259,7 @@ export default function MissionsScreen() {
                     </View>
                   </View>
                   <Text style={s.mDesc}>{m.description}</Text>
+                  {flavor && <Text style={s.mFlavor}>{flavor}</Text>}
                   <ProgressBar
                     value={pct}
                     color={tc}
@@ -306,6 +360,7 @@ export default function MissionsScreen() {
               const isOn    = selected.includes(t.id);
               const locked  = activeMissions.length >= 2;
               const desc    = t.description_template.replace('{target}', String(Math.round(t.base_target)));
+              const flavor  = FLAVOR_TEXT[t.type];
               // First mission carries the "Recommended" badge when ML reordered the list
               const isRecommended = idx === 0 && (trend === 'improving' || trend === 'declining');
 
@@ -343,6 +398,10 @@ export default function MissionsScreen() {
                     </View>
                   </View>
                   <Text style={s.mDesc}>{desc}</Text>
+                  {flavor && <Text style={s.mFlavor}>{flavor}</Text>}
+                  <View style={s.scaleRow}>
+                    <Text style={s.scaleText}>Scaled for Level {userLevel}</Text>
+                  </View>
                   <View style={s.mFoot}>
                     <View style={s.xpRow}>
                       {IZap(Colors.t3)}
@@ -470,5 +529,68 @@ const s = StyleSheet.create({
     fontFamily: Fonts.bold,
     letterSpacing: 0.8,
     color: Colors.cr,
+  },
+
+  // Slot indicator (always visible above active missions)
+  activeHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 12,
+  },
+  slotBadge: {
+    backgroundColor: `${Colors.up}15`,
+    borderWidth: 1, borderColor: `${Colors.up}25`,
+    borderRadius: Radius.full,
+    paddingHorizontal: 9, paddingVertical: 3,
+  },
+  slotBadgeFull: {
+    backgroundColor: `${Colors.cr}15`,
+    borderColor: Colors.crBdr,
+  },
+  slotBadgeText: {
+    fontSize: 10, fontFamily: Fonts.monoBold, letterSpacing: 0.8, color: Colors.up,
+  },
+  slotBadgeTextFull: { color: Colors.cr },
+
+  // Flavor + scaling-info on cards
+  mFlavor: {
+    fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3,
+    fontStyle: 'italic', marginBottom: 12, marginTop: -6, lineHeight: 17,
+  },
+  scaleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.s4,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 8, paddingVertical: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  scaleText: {
+    fontSize: 10, fontFamily: Fonts.monoBold, letterSpacing: 0.6, color: Colors.t2,
+  },
+
+  // Expired-mission banner
+  expiredBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: `${Colors.flat}12`,
+    borderWidth: 1, borderColor: `${Colors.flat}30`,
+    borderRadius: Radius.md,
+    paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 8,
+  },
+  expiredLbl: {
+    fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.4,
+    color: Colors.flat, marginBottom: 3,
+  },
+  expiredText: {
+    fontSize: 13, fontFamily: Fonts.regular, color: Colors.t1, lineHeight: 18,
+  },
+  expiredDismiss: {
+    backgroundColor: Colors.s4,
+    borderWidth: 1, borderColor: Colors.lineH,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  expiredDismissText: {
+    fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 0.8, color: Colors.t2,
   },
 });

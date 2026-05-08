@@ -74,8 +74,21 @@ def get_missions(
         .all()
     )
 
+    # Recently expired (last 7 days) — surfaced once to the user, then dismissed client-side
+    expired = (
+        db.query(UserMission)
+        .options(joinedload(UserMission.template))
+        .filter(
+            UserMission.user_id == current_user.id,
+            UserMission.status == "expired",
+            UserMission.expires_at > now - timedelta(days=7),
+        )
+        .all()
+    )
+
     active_out = [_to_user_mission_out(m) for m in active]
     completed_out = [_to_user_mission_out(m) for m in completed]
+    expired_out = [_to_user_mission_out(m) for m in expired]
 
     # Available templates (exclude ones the user already has active)
     active_template_ids = {m.mission_template_id for m in active}
@@ -116,6 +129,7 @@ def get_missions(
     return AvailableMissionsOut(
         active=active_out,
         completed=completed_out,
+        expired=expired_out,
         available=available,
         trend=trend,
     )

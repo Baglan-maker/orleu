@@ -158,6 +158,7 @@ class UserMissionOut(BaseModel):
 class AvailableMissionsOut(BaseModel):
     active:    List[UserMissionOut]
     completed: List[UserMissionOut] = []
+    expired:   List[UserMissionOut] = []
     available: List[MissionTemplateOut]
     # ML trend used to order `available`; null if user is in cold-start.
     # improving → hardest first, declining → easiest first, plateau → unsorted.

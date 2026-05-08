@@ -112,6 +112,7 @@ export interface UserMissionResponse {
 export interface AvailableMissionsResponse {
   active:    UserMissionResponse[];
   completed: UserMissionResponse[];
+  expired:   UserMissionResponse[];   // recently expired (last 7 days), shown as a banner until dismissed
   available: MissionTemplateResponse[];
   trend:     MlTrend | null;          // current ML-driven ordering — null if cold start
 }

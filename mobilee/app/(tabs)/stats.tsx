@@ -25,6 +25,7 @@ import { WorkoutHeatmap }  from '../../components/profile/WorkoutHeatmap';
 import {
   MuscleDistribution, buildMuscleData, type MuscleItem,
 } from '../../components/profile/MuscleDistribution';
+import { getSeenPrs, markPrsSeen } from '../../services/storage';
 
 // ─── SVG Icons (stroke-only) ─────────────────────────────────────
 function IGear() {
@@ -196,6 +197,8 @@ export default function ProfileScreen() {
   const [mlStatus,       setMlStatus]       = useState<MlStatusResponse | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [fetchError,     setFetchError]     = useState<string | null>(null);
+  const [newPrIds,       setNewPrIds]       = useState<Set<string>>(new Set());
+  const [xpInfoOpen,     setXpInfoOpen]     = useState(false);
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
 
@@ -237,6 +240,20 @@ export default function ProfileScreen() {
           setPrs(prsRes.data);
           setMlStatus(mlRes?.data ?? null);
           fetchAchievements();
+
+          // Detect PRs the user hasn't seen yet so we can highlight them.
+          // Fingerprint includes achieved_at so beating an old PR re-fires the badge.
+          const seen = await getSeenPrs();
+          const seenSet = new Set(seen);
+          const fresh = prsRes.data
+            .map(pr => `${pr.exercise_id}:${pr.achieved_at}`)
+            .filter(fp => !seenSet.has(fp));
+          if (!cancelled && fresh.length > 0) {
+            setNewPrIds(new Set(fresh));
+            // Persist immediately so a hard refresh doesn't re-flag them, but keep
+            // showing the badge until the user actually sees the screen.
+            markPrsSeen(fresh);
+          }
 
           // Fetch muscle data for last 7 days
           const sevenDaysAgo = new Date();
@@ -280,6 +297,13 @@ export default function ProfileScreen() {
       } as any).start();
     });
   }, [weeklyData]);
+
+  // Clear the NEW-PR highlight after the user has had time to notice it.
+  useEffect(() => {
+    if (newPrIds.size === 0) return;
+    const t = setTimeout(() => setNewPrIds(new Set()), 6000);
+    return () => clearTimeout(t);
+  }, [newPrIds]);
 
   const xp       = progress?.xp ?? 0;
   const level    = progress?.level ?? 1;
@@ -474,12 +498,23 @@ export default function ProfileScreen() {
               <Text style={s.streakStatLabel}>Best</Text>
             </View>
           </View>
+          <Text style={s.streakHint}>
+            Work out every day to keep your streak. Missing a day resets it.
+          </Text>
         </TouchableOpacity>
 
         {/* ── Level & XP ── */}
         <View style={s.card}>
           <View style={s.cardHeader}>
             <Text style={s.cardTitle}>Level</Text>
+            <TouchableOpacity
+              onPress={() => setXpInfoOpen(o => !o)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={s.xpInfoBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={s.xpInfoBtnText}>{xpInfoOpen ? '×' : 'i'}</Text>
+            </TouchableOpacity>
           </View>
           <View style={s.levelRow}>
             <TouchableOpacity onPress={handleLevelTap} activeOpacity={1}>
@@ -498,6 +533,15 @@ export default function ProfileScreen() {
               <Text style={s.totalXp}>{xp} total XP</Text>
             </View>
           </View>
+          {xpInfoOpen && (
+            <View style={s.xpInfoPanel}>
+              <Text style={s.xpInfoTitle}>How to earn XP</Text>
+              <Text style={s.xpInfoLine}>• <Text style={s.xpInfoBold}>+50 XP</Text> per workout completed</Text>
+              <Text style={s.xpInfoLine}>• <Text style={s.xpInfoBold}>+10 XP</Text> per exercise logged</Text>
+              <Text style={s.xpInfoLine}>• <Text style={s.xpInfoBold}>+15 XP</Text> per 1,000 kg of volume moved</Text>
+              <Text style={s.xpInfoLine}>• Bonus XP from missions and personal records</Text>
+            </View>
+          )}
         </View>
 
         {/* ── Personal Records ── */}
@@ -518,11 +562,18 @@ export default function ProfileScreen() {
               {prs.slice(0, 20).map((pr) => {
                 const d = new Date(pr.achieved_at);
                 const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+                const fp = `${pr.exercise_id}:${pr.achieved_at}`;
+                const isNew = newPrIds.has(fp);
                 return (
-                  <View key={pr.exercise_id} style={s.prCard}>
+                  <View key={pr.exercise_id} style={[s.prCard, isNew && s.prCardNew]}>
+                    {isNew && (
+                      <View style={s.prNewBadge}>
+                        <Text style={s.prNewBadgeText}>NEW</Text>
+                      </View>
+                    )}
                     <Text style={s.prMuscle}>{pr.muscle_group}</Text>
                     <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
-                    <Text style={s.prWeight}>{pr.weight_kg} <Text style={s.prUnit}>kg</Text></Text>
+                    <Text style={[s.prWeight, isNew && { color: Colors.cr }]}>{pr.weight_kg} <Text style={s.prUnit}>kg</Text></Text>
                     <Text style={s.prDate}>{dateStr}</Text>
                   </View>
                 );
@@ -537,12 +588,39 @@ export default function ProfileScreen() {
         )}
 
         {/* ── Achievements ── */}
-        {achList.length > 0 && (
-          <View style={s.sectionOuter}>
-            <View style={s.sectionOuterHeader}>
-              <Text style={s.cardTitle}>Achievements</Text>
+        <View style={s.sectionOuter}>
+          <View style={s.sectionOuterHeader}>
+            <Text style={s.cardTitle}>Achievements</Text>
+            {achList.length > 0 && (
               <Text style={s.achBadge}>{earnedCount} / {achList.length}</Text>
+            )}
+          </View>
+          {earnedCount === 0 ? (
+            <View style={s.achEmpty}>
+              {(() => {
+                const preview = achList.find(a => !a.earned);
+                return (
+                  <>
+                    <View style={[s.achBox, s.achEmptyIcon]}>
+                      <AchievementIcon
+                        iconKey={preview?.icon_key ?? 'trophy'}
+                        color={Colors.t3}
+                        size={26}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.achEmptyTitle}>
+                        {preview ? `Up next: ${preview.name}` : 'No achievements yet'}
+                      </Text>
+                      <Text style={s.achEmptyText}>
+                        Complete workouts and missions to unlock achievements.
+                      </Text>
+                    </View>
+                  </>
+                );
+              })()}
             </View>
+          ) : (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -566,8 +644,8 @@ export default function ProfileScreen() {
                 </View>
               ))}
             </ScrollView>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Bottom spacing */}
         <View style={{ height: 20 }} />
@@ -736,10 +814,10 @@ const s = StyleSheet.create({
   volChipText: { fontSize: 10, fontFamily: Fonts.mono },
   chartArea:   { flexDirection: 'row', alignItems: 'flex-end', height: 80 },
   barCol:      { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  barVolText:  { fontSize: 9, fontFamily: Fonts.mono, marginBottom: 4, textAlign: 'center' },
+  barVolText:  { fontSize: 11, fontFamily: Fonts.mono, marginBottom: 4, textAlign: 'center' },
   bar:         { width: '68%', borderRadius: 4, minHeight: 2 },
   weekLabels:  { flexDirection: 'row', marginTop: 8 },
-  weekLabel:   { flex: 1, textAlign: 'center', fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3 },
+  weekLabel:   { flex: 1, textAlign: 'center', fontSize: 11, fontFamily: Fonts.mono, color: Colors.t3 },
 
   // ── Streak ──
   streakRow: {
@@ -943,5 +1021,96 @@ const s = StyleSheet.create({
     color: Colors.t3,
     textAlign: 'center',
     lineHeight: 12,
+  },
+
+  // Achievements empty state
+  achEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Colors.s2,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+  },
+  achEmptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: Colors.s3,
+    borderColor: Colors.line,
+  },
+  achEmptyTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+    color: Colors.t1,
+    marginBottom: 3,
+  },
+  achEmptyText: {
+    fontSize: 11,
+    fontFamily: Fonts.regular,
+    color: Colors.t3,
+    lineHeight: 15,
+  },
+
+  // PR NEW badge + glow
+  prCardNew: {
+    borderColor: Colors.crBdr,
+    backgroundColor: Colors.crLo,
+    shadowColor: Colors.cr,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  prNewBadge: {
+    position: 'absolute',
+    top: 8, right: 8,
+    backgroundColor: Colors.cr,
+    borderRadius: Radius.full,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  prNewBadgeText: {
+    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 0.8, color: Colors.bone,
+  },
+
+  // Streak rule hint
+  streakHint: {
+    fontSize: 11,
+    fontFamily: Fonts.regular,
+    color: Colors.t3,
+    textAlign: 'center',
+    marginTop: Spacing.md,
+    lineHeight: 16,
+  },
+
+  // XP info — toggle button + expandable panel
+  xpInfoBtn: {
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 1, borderColor: Colors.line,
+    backgroundColor: Colors.s3,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  xpInfoBtnText: {
+    fontSize: 12, fontFamily: Fonts.bold, color: Colors.t2, lineHeight: 14,
+  },
+  xpInfoPanel: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.line,
+    gap: 4,
+  },
+  xpInfoTitle: {
+    fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.2,
+    color: Colors.t3, textTransform: 'uppercase', marginBottom: 6,
+  },
+  xpInfoLine: {
+    fontSize: 12, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 18,
+  },
+  xpInfoBold: {
+    fontFamily: Fonts.monoBold, color: Colors.bone,
   },
 });
