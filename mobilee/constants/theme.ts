@@ -40,6 +40,11 @@ export const Colors = {
     macroProtein: '#C8343A',       // same as cr — protein bar
     macroCarbs:   '#A89060',       // amber/flat — carbs bar
     macroFat:     '#4A7FC1',       // frost blue — fat bar
+
+    // ── Modal overlay (single source of truth) ───────────────────
+    // Anchored to the void surface so modals feel like the room dims, not a
+    // pure-black pane. Used everywhere a modal renders a backdrop.
+    overlay: 'rgba(8,8,9,0.88)',
   } as const;
   
   export const Fonts = {

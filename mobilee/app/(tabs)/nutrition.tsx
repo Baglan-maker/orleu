@@ -2,6 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -140,6 +141,17 @@ export default function NutritionScreen() {
   const [modalMeal,  setModalMeal]   = useState<MealType | null>(null);
   const [deletingId, setDeletingId]  = useState<string | null>(null);
   const [copyingMeal, setCopyingMeal] = useState<MealType | null>(null);
+  const [refreshing, setRefreshing]   = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await syncPending();
+      await Promise.all([loadDay(selectedDate), loadGoals()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [selectedDate, loadDay, loadGoals, syncPending]);
 
   useFocusEffect(
     useCallback(() => {
@@ -239,12 +251,19 @@ export default function NutritionScreen() {
         <Text style={s.pageTitle}>Nutrition</Text>
 
         <View style={s.datePill}>
-          <TouchableOpacity style={s.chevronBtn} onPress={goBack}><IChevronLeft/></TouchableOpacity>
+          <TouchableOpacity
+            style={s.chevronBtn}
+            onPress={goBack}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <IChevronLeft/>
+          </TouchableOpacity>
           <Text style={s.dateText}>{formatDate(selectedDate)}</Text>
           <TouchableOpacity
             style={[s.chevronBtn, !canGoNext && s.chevronDisabled]}
             onPress={goForward}
             disabled={!canGoNext}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <IChevronRight/>
           </TouchableOpacity>
@@ -257,7 +276,13 @@ export default function NutritionScreen() {
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.cr} />
+        }
+      >
 
         {/* ── Date strip — last 14 days, scroll-snap to selected ── */}
         <ScrollView

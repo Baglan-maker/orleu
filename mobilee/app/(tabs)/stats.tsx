@@ -1,7 +1,7 @@
 // mobile/app/(tabs)/stats.tsx — Unified Profile Page
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, ActivityIndicator, Dimensions, Image, ScrollView, StyleSheet, Text,
+  Animated, ActivityIndicator, Dimensions, Image, RefreshControl, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -220,67 +220,77 @@ export default function ProfileScreen() {
   const barAnims = useRef(Array.from({ length: 5 }, () => new Animated.Value(0))).current;
 
   // ── Data fetching ──────────────────────────────────────────────
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadProfile = useCallback(async (cancelledRef?: { current: boolean }) => {
+    const isCancelled = () => cancelledRef?.current === true;
+    try {
+      const [progRes, histRes, prsRes, mlRes] = await Promise.all([
+        progressApi.get(),
+        workoutApi.getHistory(50),
+        prsApi.getAll(),
+        mlApi.status().catch(() => null),   // ML may 401/500 on first run — don't block screen
+      ]);
+      if (isCancelled()) return;
+
+      setProgress(progRes.data);
+      setTotalWorkouts(progRes.data.total_sessions ?? 0);
+      const hist: WorkoutListItem[] = progRes.data ? ((histRes.data as any).items ?? []) : [];
+      setWorkoutHistory(hist);
+      setPrs(prsRes.data);
+      setMlStatus(mlRes?.data ?? null);
+      fetchAchievements();
+      setFetchError(null);
+
+      // Detect PRs the user hasn't seen yet so we can highlight them.
+      // Fingerprint includes achieved_at so beating an old PR re-fires the badge.
+      const seen = await getSeenPrs();
+      const seenSet = new Set(seen);
+      const fresh = prsRes.data
+        .map(pr => `${pr.exercise_id}:${pr.achieved_at}`)
+        .filter(fp => !seenSet.has(fp));
+      if (!isCancelled() && fresh.length > 0) {
+        setNewPrIds(new Set(fresh));
+        markPrsSeen(fresh);
+      }
+
+      // Fetch muscle data for last 7 days
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+
+      const recentIds = hist
+        .filter(w => new Date(w.workout_date + 'T00:00:00') >= sevenDaysAgo)
+        .map(w => w.id);
+
+      if (recentIds.length > 0) {
+        const details = await Promise.all(
+          recentIds.slice(0, 10).map(id => workoutApi.getById(id)),
+        );
+        if (isCancelled()) return;
+        const allExercises = details.flatMap(d => d.data.exercises);
+        setMuscleData(buildMuscleData(allExercises));
+      }
+    } catch {
+      if (!isCancelled()) setFetchError('Could not load profile data. Pull down to retry.');
+    } finally {
+      if (!isCancelled()) setLoading(false);
+    }
+  }, [fetchAchievements]);
+
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      (async () => {
-        try {
-          const [progRes, histRes, prsRes, mlRes] = await Promise.all([
-            progressApi.get(),
-            workoutApi.getHistory(50),
-            prsApi.getAll(),
-            mlApi.status().catch(() => null),   // ML may 401/500 on first run — don't block screen
-          ]);
-          if (cancelled) return;
-
-          setProgress(progRes.data);
-          setTotalWorkouts(progRes.data.total_sessions ?? 0);
-          const hist: WorkoutListItem[] = progRes.data ? ((histRes.data as any).items ?? []) : [];
-          setWorkoutHistory(hist);
-          setPrs(prsRes.data);
-          setMlStatus(mlRes?.data ?? null);
-          fetchAchievements();
-
-          // Detect PRs the user hasn't seen yet so we can highlight them.
-          // Fingerprint includes achieved_at so beating an old PR re-fires the badge.
-          const seen = await getSeenPrs();
-          const seenSet = new Set(seen);
-          const fresh = prsRes.data
-            .map(pr => `${pr.exercise_id}:${pr.achieved_at}`)
-            .filter(fp => !seenSet.has(fp));
-          if (!cancelled && fresh.length > 0) {
-            setNewPrIds(new Set(fresh));
-            // Persist immediately so a hard refresh doesn't re-flag them, but keep
-            // showing the badge until the user actually sees the screen.
-            markPrsSeen(fresh);
-          }
-
-          // Fetch muscle data for last 7 days
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          sevenDaysAgo.setHours(0, 0, 0, 0);
-
-          const recentIds = hist
-            .filter(w => new Date(w.workout_date + 'T00:00:00') >= sevenDaysAgo)
-            .map(w => w.id);
-
-          if (recentIds.length > 0) {
-            const details = await Promise.all(
-              recentIds.slice(0, 10).map(id => workoutApi.getById(id)),
-            );
-            if (cancelled) return;
-            const allExercises = details.flatMap(d => d.data.exercises);
-            setMuscleData(buildMuscleData(allExercises));
-          }
-        } catch {
-          if (!cancelled) setFetchError('Could not load profile data. Pull down to retry.');
-        } finally {
-          if (!cancelled) setLoading(false);
-        }
-      })();
-      return () => { cancelled = true; };
-    }, []),
+      const ref = { current: false };
+      loadProfile(ref);
+      return () => { ref.current = true; };
+    }, [loadProfile]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await loadProfile(); }
+    finally { setRefreshing(false); }
+  }, [loadProfile]);
 
   // ── Derived data ───────────────────────────────────────────────
   const weeklyData = useMemo(() => buildWeeklyVolume(workoutHistory), [workoutHistory]);
@@ -373,7 +383,13 @@ export default function ProfileScreen() {
   // ── Render ─────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.cr} />
+        }
+      >
 
         {fetchError && (
           <View style={{ backgroundColor: Colors.s3, borderRadius: Radius.md, padding: Spacing.md, marginHorizontal: Spacing.lg, marginTop: Spacing.sm }}>
@@ -732,9 +748,9 @@ const s = StyleSheet.create({
     marginLeft: 4,
   },
   scoreLabel: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: Fonts.bold,
-    letterSpacing: 2,
+    letterSpacing: 1.8,
     color: Colors.t3,
     marginBottom: 2,
   },
@@ -768,9 +784,9 @@ const s = StyleSheet.create({
     lineHeight: 24,
   },
   pillLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: Fonts.bold,
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     color: Colors.t3,
     textTransform: 'uppercase',
   },

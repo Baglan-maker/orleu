@@ -1,7 +1,7 @@
 // mobile/app/(tabs)/missions.tsx
 import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Card }        from '../../components/ui/Card';
 import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import { EmptyState }  from '../../components/ui/EmptyState';
 import {
   missionApi,
   coachApi,
@@ -69,6 +70,7 @@ export default function MissionsScreen() {
   const [userLevel, setUserLevel]     = useState<number>(1);
   const [selected, setSelected]       = useState<string[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
   const [accepting, setAccepting]     = useState(false);
   const [completedOpen, setCompletedOpen] = useState(false);
 
@@ -101,6 +103,12 @@ export default function MissionsScreen() {
     await addDismissedExpiry(id);
     setExpiredMissions(prev => prev.filter(m => m.id !== id));
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await fetchMissions(); }
+    finally { setRefreshing(false); }
+  }, [fetchMissions]);
 
   useFocusEffect(
     useCallback(() => {
@@ -152,7 +160,13 @@ export default function MissionsScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.cr} />
+        }
+      >
 
         {/* ── Header ── */}
         <View style={s.header}>
@@ -433,11 +447,11 @@ export default function MissionsScreen() {
         )}
 
         {activeMissions.length === 0 && availableTemplates.length === 0 && (
-          <View style={{ alignItems: 'center', paddingTop: 40 }}>
-            <Text style={{ fontSize: 14, fontFamily: Fonts.regular, color: Colors.t3 }}>
-              No missions available yet. Complete a workout first!
-            </Text>
-          </View>
+          <EmptyState
+            icon={<IBrain/>}
+            title="No missions yet"
+            message="Complete your first workout to unlock weekly missions tailored to your level."
+          />
         )}
 
       </ScrollView>

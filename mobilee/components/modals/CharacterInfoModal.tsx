@@ -70,7 +70,7 @@ export function CharacterInfoModal({ visible, characterId, currentStage, onClose
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8,8,9,0.88)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,

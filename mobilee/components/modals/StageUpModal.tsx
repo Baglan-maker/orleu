@@ -123,7 +123,7 @@ export function StageUpModal({ visible, stage, themeId, onClose }: Props) {
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8,8,9,0.92)',
+    backgroundColor: Colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
   },

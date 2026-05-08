@@ -206,7 +206,12 @@ export default function StreaksScreen() {
     <SafeAreaView style={st.safe} edges={['top']}>
       {/* Header */}
       <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={st.backBtn}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <IBack />
         </TouchableOpacity>
         <Text style={st.headerTitle}>Streaks</Text>
@@ -757,7 +762,7 @@ const st = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: Colors.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,

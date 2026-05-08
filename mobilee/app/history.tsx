@@ -316,7 +316,11 @@ export default function HistoryScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={s.backBtn}
+          onPress={() => router.back()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <IBack/>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
