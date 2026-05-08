@@ -104,28 +104,30 @@ export default function WorkoutScreen() {
   const xpPct     = isMaxLevel ? 100 : (xpNext > 0 ? Math.min(100, Math.round(xpInLevel / xpNext * 100)) : 100);
 
 
-  // Modals
-  const [levelUpVisible,      setLevelUpVisible]      = useState(false);
-  const [newLevel,            setNewLevel]            = useState(1);
-  const [xpGained,            setXpGained]            = useState(0);
-  const [missionVisible,      setMissionVisible]      = useState(false);
-  const [stageUpVisible,      setStageUpVisible]      = useState(false);
-  const [newStage,            setNewStage]            = useState<typeof stage>(0);
-  const [achModalVisible,     setAchModalVisible]     = useState(false);
-  const [newAchievements,     setNewAchievements]     = useState<AchievementEarned[]>([]);
-  const [pendingAchievements, setPendingAchievements] = useState<AchievementEarned[]>([]);
-  const [prModalVisible,      setPrModalVisible]      = useState(false);
-  const [newPRs,              setNewPRs]              = useState<PRResult[]>([]);
-  const [pendingPRs,          setPendingPRs]          = useState<PRResult[]>([]);
-  const [chapterModalVisible, setChapterModalVisible] = useState(false);
-  const [chapterReward,       setChapterReward]       = useState<{
+  // ── Post-workout celebration queue ────────────────────────────
+  // One modal shows at a time; dismissal advances the queue. Order:
+  // levelUp → achievement → pr → chapter. No setTimeout chains.
+  type ChapterReward = {
     chapter_number: number; xp: number; coins: number; campaign_complete: boolean;
-  } | null>(null);
-  const [pendingChapter,      setPendingChapter]      = useState<{
-    chapter_number: number; xp: number; coins: number; campaign_complete: boolean;
-  } | null>(null);
-  const [xpToastVisible,      setXpToastVisible]      = useState(false);
-  const [xpToastAmount,       setXpToastAmount]       = useState(0);
+  };
+  type Celebration =
+    | { kind: 'levelUp';     level: number; xpGained: number }
+    | { kind: 'achievement'; achievements: AchievementEarned[] }
+    | { kind: 'pr';          prs: PRResult[] }
+    | { kind: 'chapter';     reward: ChapterReward };
+
+  const [celebrationQueue, setCelebrationQueue] = useState<Celebration[]>([]);
+  const activeCelebration = celebrationQueue[0] ?? null;
+  const dismissCelebration = useCallback(() => {
+    setCelebrationQueue(q => q.slice(1));
+  }, []);
+
+  // Other (non-sequenced) modals
+  const [missionVisible, setMissionVisible] = useState(false);
+  const [stageUpVisible, setStageUpVisible] = useState(false);
+  const [newStage,       setNewStage]       = useState<typeof stage>(0);
+  const [xpToastVisible, setXpToastVisible] = useState(false);
+  const [xpToastAmount,  setXpToastAmount]  = useState(0);
 
   const totalReps   = selectTotalReps(exercises);
   const totalVolume = selectTotalVolume(exercises);
@@ -188,35 +190,24 @@ export default function WorkoutScreen() {
       const prs    = result.new_prs ?? [];
       const chapter = result.chapter_completed ?? null;
 
+      const queue: Celebration[] = [];
+      if (result.leveled_up && result.new_level != null) {
+        queue.push({ kind: 'levelUp', level: result.new_level, xpGained: result.xp_gained ?? 0 });
+      }
       if (earned.length > 0) {
-        if (result.leveled_up) {
-          setPendingAchievements(earned);
-          if (prs.length > 0) setPendingPRs(prs);
-          if (chapter) setPendingChapter(chapter);
-        } else {
-          setNewAchievements(earned);
-          if (prs.length > 0) setPendingPRs(prs);
-          if (chapter) setPendingChapter(chapter);
-          setAchModalVisible(true);
-        }
-      } else if (prs.length > 0) {
-        setNewPRs(prs);
-        if (chapter) setPendingChapter(chapter);
-        setPrModalVisible(true);
-      } else if (chapter && !result.leveled_up) {
-        // No level-up, no achievements, no PRs — show chapter directly
-        setChapterReward(chapter);
-        setChapterModalVisible(true);
+        queue.push({ kind: 'achievement', achievements: earned });
+      }
+      if (prs.length > 0) {
+        queue.push({ kind: 'pr', prs });
+      }
+      if (chapter) {
+        queue.push({ kind: 'chapter', reward: chapter });
       }
 
-      if (result.leveled_up && result.new_level != null) {
-        setXpGained(result.xp_gained ?? 0);
-        setNewLevel(result.new_level);
-        setLevelUpVisible(true);
-      } else if (
+      if (queue.length > 0) {
+        setCelebrationQueue(queue);
+      } else if ((result.xp_gained ?? 0) > 0) {
         // No celebration modals at all → show the lightweight XP toast
-        !earned.length && !prs.length && !chapter && (result.xp_gained ?? 0) > 0
-      ) {
         setXpToastAmount(result.xp_gained ?? 0);
         setXpToastVisible(true);
       }
@@ -415,27 +406,33 @@ export default function WorkoutScreen() {
         submitStatus={submitStatus}
       />
 
-      {/* ── Post-workout modals ── */}
+      {/* ── Post-workout celebration queue ── */}
       <LevelUpModal
-        visible={levelUpVisible}
-        level={newLevel}
-        xpGained={xpGained}
-        onClose={() => {
-          setLevelUpVisible(false);
-          if (pendingAchievements.length > 0) {
-            setNewAchievements(pendingAchievements);
-            setPendingAchievements([]);
-            setTimeout(() => setAchModalVisible(true), 300);
-          } else if (pendingPRs.length > 0) {
-            setNewPRs(pendingPRs);
-            setPendingPRs([]);
-            setTimeout(() => setPrModalVisible(true), 300);
-          } else if (pendingChapter) {
-            setChapterReward(pendingChapter);
-            setPendingChapter(null);
-            setTimeout(() => setChapterModalVisible(true), 300);
-          }
-        }}
+        visible={activeCelebration?.kind === 'levelUp'}
+        level={activeCelebration?.kind === 'levelUp' ? activeCelebration.level : 1}
+        xpGained={activeCelebration?.kind === 'levelUp' ? activeCelebration.xpGained : 0}
+        onClose={dismissCelebration}
+      />
+
+      <AchievementModal
+        visible={activeCelebration?.kind === 'achievement'}
+        achievements={activeCelebration?.kind === 'achievement' ? activeCelebration.achievements : []}
+        onClose={dismissCelebration}
+      />
+
+      <PRModal
+        visible={activeCelebration?.kind === 'pr'}
+        prs={activeCelebration?.kind === 'pr' ? activeCelebration.prs : []}
+        onClose={dismissCelebration}
+      />
+
+      <ChapterCompleteModal
+        visible={activeCelebration?.kind === 'chapter'}
+        chapterNumber={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.chapter_number : 0}
+        xp={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.xp : 0}
+        coins={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.coins : 0}
+        campaignComplete={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.campaign_complete : false}
+        onClose={dismissCelebration}
       />
 
       <MissionCompleteModal
@@ -451,50 +448,6 @@ export default function WorkoutScreen() {
         stage={newStage}
         themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
         onClose={() => setStageUpVisible(false)}
-      />
-
-      <AchievementModal
-        achievements={newAchievements}
-        visible={achModalVisible}
-        onClose={() => {
-          setAchModalVisible(false);
-          setNewAchievements([]);
-          if (pendingPRs.length > 0) {
-            setNewPRs(pendingPRs);
-            setPendingPRs([]);
-            setTimeout(() => setPrModalVisible(true), 300);
-          } else if (pendingChapter) {
-            setChapterReward(pendingChapter);
-            setPendingChapter(null);
-            setTimeout(() => setChapterModalVisible(true), 300);
-          }
-        }}
-      />
-
-      <PRModal
-        prs={newPRs}
-        visible={prModalVisible}
-        onClose={() => {
-          setPrModalVisible(false);
-          setNewPRs([]);
-          if (pendingChapter) {
-            setChapterReward(pendingChapter);
-            setPendingChapter(null);
-            setTimeout(() => setChapterModalVisible(true), 300);
-          }
-        }}
-      />
-
-      <ChapterCompleteModal
-        visible={chapterModalVisible}
-        chapterNumber={chapterReward?.chapter_number ?? 0}
-        xp={chapterReward?.xp ?? 0}
-        coins={chapterReward?.coins ?? 0}
-        campaignComplete={chapterReward?.campaign_complete ?? false}
-        onClose={() => {
-          setChapterModalVisible(false);
-          setChapterReward(null);
-        }}
       />
 
       <XpToast

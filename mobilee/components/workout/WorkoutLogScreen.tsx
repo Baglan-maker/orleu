@@ -24,6 +24,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
@@ -119,6 +120,7 @@ function useRestTimer(defaultDuration: number) {
       setRemaining(r => {
         if (r <= 1) {
           setRunning(false);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           return 0;
         }
         return r - 1;
@@ -131,11 +133,13 @@ function useRestTimer(defaultDuration: number) {
     if (!enabled) return;
     setRemaining(duration);
     setRunning(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   }, [enabled, duration]);
 
   const skip = useCallback(() => {
     setRunning(false);
     setRemaining(0);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, []);
 
   return { enabled, setEnabled, duration, setDuration, remaining, running, start, skip };
@@ -576,23 +580,25 @@ export function WorkoutLogScreen({ visible, onClose, onFinish, submitStatus }: P
             </TouchableOpacity>
 
             {/* Bottom spacer for sticky button */}
-            <View style={{ height: 80 }}/>
+            {exercises.length > 0 && <View style={{ height: 80 }}/>}
           </ScrollView>
 
           {/* ── Sticky Finish button at bottom ── */}
-          <View style={s.stickyBottom}>
-            <Button
-              label={
-                isSuccess  ? 'Session saved!'
-                : isLoading ? 'Saving...'
-                : !valid    ? `Check all sets (${totalCompletedSets}/${totalSets})`
-                :             'Finish & Log Session'
-              }
-              onPress={onFinish}
-              disabled={!canFinish}
-              loading={isLoading}
-            />
-          </View>
+          {exercises.length > 0 && (
+            <View style={s.stickyBottom}>
+              <Button
+                label={
+                  isSuccess  ? 'Session saved!'
+                  : isLoading ? 'Saving...'
+                  : !valid    ? `Check all sets (${totalCompletedSets}/${totalSets})`
+                  :             'Finish & Log Session'
+                }
+                onPress={onFinish}
+                disabled={!canFinish}
+                loading={isLoading}
+              />
+            </View>
+          )}
 
         </KeyboardAvoidingView>
       </View>
