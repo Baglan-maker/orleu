@@ -24,7 +24,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
@@ -32,6 +31,7 @@ import { Button } from '../ui/Button';
 import { ExerciseCard } from './ExerciseCard';
 import { ExerciseSearchModal, type ExerciseItem } from './ExerciseSearchModal';
 import { useWorkoutStore, type WorkoutExercise } from '../../store/workoutStore';
+import { useRestTimerStore } from '../../store/restTimerStore';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IChevronDown() {
@@ -102,55 +102,19 @@ function useWorkoutTimer(startedAt: Date | null) {
     : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-// ─── Global rest timer (lives in parent, survives card collapse) ──
-function useRestTimer(defaultDuration: number) {
-  const [enabled,   setEnabled]   = useState(true);
-  const [duration,  setDuration]  = useState(defaultDuration);
-  const [remaining, setRemaining] = useState(0);
-  const [running,   setRunning]   = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+// ─── Inline rest-timer widget (reads from the global store) ───────
+// The countdown state itself lives in restTimerStore so it survives card
+// collapse, screen unmount, and is rendered as a floating overlay on every
+// other screen via RestTimerOverlay.
+function RestTimerWidget() {
+  const enabled     = useRestTimerStore(s => s.enabled);
+  const setEnabled  = useRestTimerStore(s => s.setEnabled);
+  const duration    = useRestTimerStore(s => s.duration);
+  const setDuration = useRestTimerStore(s => s.setDuration);
+  const remaining   = useRestTimerStore(s => s.remaining);
+  const running     = useRestTimerStore(s => s.running);
+  const skip        = useRestTimerStore(s => s.skip);
 
-  // Countdown logic
-  useEffect(() => {
-    if (!running) {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-      return;
-    }
-    intervalRef.current = setInterval(() => {
-      setRemaining(r => {
-        if (r <= 1) {
-          setRunning(false);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          return 0;
-        }
-        return r - 1;
-      });
-    }, 1000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [running]);
-
-  const start = useCallback(() => {
-    if (!enabled) return;
-    setRemaining(duration);
-    setRunning(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  }, [enabled, duration]);
-
-  const skip = useCallback(() => {
-    setRunning(false);
-    setRemaining(0);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }, []);
-
-  return { enabled, setEnabled, duration, setDuration, remaining, running, start, skip };
-}
-
-// ─── Floating rest timer widget ───────────────────────────────────
-function RestTimerWidget({
-  enabled, setEnabled,
-  duration, setDuration,
-  remaining, running, skip,
-}: ReturnType<typeof useRestTimer>) {
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState('');
   const pulse = useRef(new Animated.Value(1)).current;
@@ -413,8 +377,17 @@ export function WorkoutLogScreen({ visible, onClose, onFinish, submitStatus }: P
     setCompletedSetsMap(prev => ({ ...prev, [localId]: completed }));
   }, []);
 
-  // ── Rest timer (global, survives card collapse + scroll) ──
-  const restTimer = useRestTimer(90);
+  // ── Rest timer (lives in global store; floating overlay handles
+  // the off-screen countdown UI, this screen just calls .start) ──
+  const startRestTimer = useRestTimerStore(s => s.start);
+  const setInWorkout   = useRestTimerStore(s => s.setInWorkout);
+
+  // Tell the overlay to hide while this modal is on-screen — the inline
+  // RestTimerWidget already renders the countdown here, no need to double up.
+  useEffect(() => {
+    setInWorkout(visible);
+    return () => setInWorkout(false);
+  }, [visible, setInWorkout]);
 
   // Start session + reset completed sets on every new open
   useEffect(() => {
@@ -448,8 +421,8 @@ export function WorkoutLogScreen({ visible, onClose, onFinish, submitStatus }: P
 
   // Trigger rest timer when any set is checked
   const onSetComplete = useCallback(() => {
-    restTimer.start();
-  }, [restTimer.start]);
+    startRestTimer();
+  }, [startRestTimer]);
 
   const isLoading = submitStatus === 'loading';
   const isSuccess = submitStatus === 'success';
@@ -544,8 +517,8 @@ export function WorkoutLogScreen({ visible, onClose, onFinish, submitStatus }: P
               numberOfLines={2}
             />
 
-            {/* ── Rest timer (always visible, stateful) ── */}
-            <RestTimerWidget {...restTimer}/>
+            {/* ── Rest timer (always visible, reads from global store) ── */}
+            <RestTimerWidget/>
 
             {/* ── Exercise cards ── */}
             {exercises.length === 0 ? (
