@@ -6,8 +6,11 @@ import {
   markWorkoutSynced,
   getPendingWorkouts,
   getExercisesForWorkout,
+  deleteWorkoutLocal,
+  isValidUUID,
   type SetEntry,
 } from '../services/database';
+import { useAuthStore } from './authStore';
 
 // ─── Типы ────────────────────────────────────────────────────────
 export type { SetEntry };
@@ -88,6 +91,13 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     // Guard first, then snapshot — prevents double-tap from slipping past the check
     if (get().submitStatus === 'loading' || get().submitStatus === 'success') return null;
     if (get().exercises.length === 0) return null;
+
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) {
+      set({ submitStatus: 'error', error: 'Not signed in.' });
+      return null;
+    }
+
     set({ submitStatus: 'loading', error: null });
 
     const { exercises, notes, startedAt } = get();
@@ -114,6 +124,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     try {
       await saveWorkoutLocal({
         id:               localId,
+        user_id:          userId,
         workout_date:     today,
         duration_minutes: durationMinutes,
         notes:            notes || null,
@@ -167,19 +178,32 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   },
 
   syncPending: async () => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) {
+      // No user logged in — nothing to sync
+      return;
+    }
+
     try {
-      const pending = await getPendingWorkouts();
+      const pending = await getPendingWorkouts(userId);
+      let cleanedZombies = 0;
+      let synced = 0;
+      let failed = 0;
+
       for (const w of pending) {
         try {
           const exercises = await getExercisesForWorkout(w.id);
-          const invalidExercises = exercises.filter(
-            ex => !ex.exercise_id.includes('-') || ex.exercise_id.startsWith('custom_')
-          );
+          // Detect zombie workouts: any non-UUID exercise_id means it can NEVER sync
+          // (fallback list IDs like 'bp', or legacy 'custom_*' offline IDs)
+          const invalidExercises = exercises.filter(ex => !isValidUUID(ex.exercise_id));
           if (invalidExercises.length > 0) {
+            const ids = invalidExercises.map(e => e.exercise_id).join(', ');
             console.warn(
-              `[workoutStore] Skipping workout ${w.id}: contains ${invalidExercises.length} ` +
-              `unsynced custom exercise(s). Sync exercises first.`,
+              `[workoutStore] Deleting zombie workout ${w.id} ` +
+              `(invalid exercise IDs: ${ids}) — these can never sync`,
             );
+            await deleteWorkoutLocal(w.id);
+            cleanedZombies++;
             continue;
           }
 
@@ -207,10 +231,26 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
           }
           if (!marked) {
             console.warn(`[workoutStore] Failed to mark workout ${w.id} as synced after 3 attempts`);
+          } else {
+            synced++;
           }
-        } catch (syncErr) {
-          console.warn('[workoutStore] failed to sync workout', w.id, syncErr);
+        } catch (syncErr: any) {
+          failed++;
+          // Surface the actual API error so we can see WHY a workout fails
+          const status = syncErr?.response?.status;
+          const detail = syncErr?.response?.data?.detail;
+          const reason = detail
+            ? `status=${status}, detail=${JSON.stringify(detail)}`
+            : (syncErr?.message ?? String(syncErr));
+          console.warn(`[workoutStore] failed to sync workout ${w.id}: ${reason}`);
         }
+      }
+
+      if (pending.length > 0) {
+        console.log(
+          `[workoutStore] Sync complete: ${synced} uploaded, ` +
+          `${cleanedZombies} zombies cleaned, ${failed} failed`,
+        );
       }
       await get().loadPendingCount();
     } catch (err) {
@@ -219,9 +259,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   },
 
   loadPendingCount: async () => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) {
+      set({ pendingCount: 0 });
+      return;
+    }
     try {
       const { getPendingCount } = await import('../services/database');
-      const cnt = await getPendingCount();
+      const cnt = await getPendingCount(userId);
       set({ pendingCount: cnt });
     } catch (err) {
       // Retain previous pendingCount — setting to 0 hides the sync indicator

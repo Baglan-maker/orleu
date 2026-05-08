@@ -10,6 +10,7 @@ import {
   getAccessToken,
   getRefreshToken,
   saveAccessToken,
+  saveRefreshToken,
   clearAll,
 } from './storage';
 
@@ -18,7 +19,7 @@ import {
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
 const BASE_URL = __DEV__
-  ? 'http://192.168.0.104:8080'   // ← замени на свой IP
+  ? 'http://192.168.0.103:8080'   // ← замени на свой IP
   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
@@ -88,15 +89,27 @@ api.interceptors.response.use(
 
     try {
       const refreshToken = await getRefreshToken();
-      if (!refreshToken) throw new Error('No refresh token');
+      if (!refreshToken) {
+        // No saved refresh token — definitely signed out
+        processQueue(new Error('No refresh token'), null);
+        await clearAll();
+        _forceLogout?.();
+        return Promise.reject(error);
+      }
 
       // Запрос на обновление — без interceptors чтобы не зациклиться
       const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, {
         refresh_token: refreshToken,
       });
 
-      const newAccessToken: string = data.access_token;
+      const newAccessToken: string  = data.access_token;
+      const newRefreshToken: string | undefined = data.refresh_token;
+
+      // Persist BOTH tokens — rotation invalidates the old refresh on the server
       await saveAccessToken(newAccessToken);
+      if (newRefreshToken) {
+        await saveRefreshToken(newRefreshToken);
+      }
 
       processQueue(null, newAccessToken);
 
@@ -104,8 +117,25 @@ api.interceptors.response.use(
       original.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(original);
 
-    } catch (refreshError) {
-      // Refresh token тоже протух — разлогиниваем
+    } catch (refreshError: unknown) {
+      // Distinguish a true auth failure (refresh token rejected by server)
+      // from a transient network error (no response at all). The former means
+      // the session is dead and we must log out. The latter is recoverable —
+      // do NOT clear tokens, just reject so the caller can retry later.
+      const ax = refreshError as { response?: { status?: number }; code?: string; message?: string };
+      const isNetworkError =
+        !ax.response ||
+        ax.code === 'ERR_NETWORK' ||
+        ax.code === 'ECONNABORTED' ||
+        ax.message === 'Network Error';
+
+      if (isNetworkError) {
+        // Keep tokens — user may regain connectivity and resume the session
+        processQueue(refreshError, null);
+        return Promise.reject(refreshError);
+      }
+
+      // Genuine auth failure (401/403 from /refresh) — refresh token is dead
       processQueue(refreshError, null);
       await clearAll();
       _forceLogout?.();

@@ -42,30 +42,9 @@ interface Props {
   onAdd:    (exercise: ExerciseItem) => void;
 }
 
-// ─── Fallback list (когда кэш пустой / нет сети) ──────────────────
-const FALLBACK_LIBRARY: ExerciseItem[] = [
-  { id: 'bp',    name: 'Bench Press',         muscle_group: 'Chest',     category: 'compound'   },
-  { id: 'ibp',   name: 'Incline Bench Press', muscle_group: 'Chest',     category: 'compound'   },
-  { id: 'cf',    name: 'Cable Fly',           muscle_group: 'Chest',     category: 'isolation'  },
-  { id: 'dl',    name: 'Deadlift',            muscle_group: 'Back',      category: 'compound'   },
-  { id: 'pr',    name: 'Pull-ups',            muscle_group: 'Back',      category: 'bodyweight' },
-  { id: 'br',    name: 'Barbell Row',         muscle_group: 'Back',      category: 'compound'   },
-  { id: 'lpd',   name: 'Lat Pulldown',        muscle_group: 'Back',      category: 'compound'   },
-  { id: 'sq',    name: 'Squat',               muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'leg',   name: 'Leg Press',           muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'rdl',   name: 'Romanian Deadlift',   muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'hc',    name: 'Hamstring Curl',      muscle_group: 'Legs',      category: 'isolation'  },
-  { id: 'le',    name: 'Leg Extension',       muscle_group: 'Legs',      category: 'isolation'  },
-  { id: 'ohp',   name: 'Overhead Press',      muscle_group: 'Shoulders', category: 'compound'   },
-  { id: 'lr',    name: 'Lateral Raise',       muscle_group: 'Shoulders', category: 'isolation'  },
-  { id: 'bbc',   name: 'Barbell Curl',        muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'dbc',   name: 'Dumbbell Curl',       muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'tri',   name: 'Tricep Pushdown',     muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'skul',  name: 'Skull Crusher',       muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'dips',  name: 'Dips',               muscle_group: 'Arms',      category: 'bodyweight' },
-  { id: 'pl',    name: 'Plank',              muscle_group: 'Core',      category: 'bodyweight' },
-  { id: 'crn',   name: 'Crunches',            muscle_group: 'Core',      category: 'bodyweight' },
-];
+// FALLBACK_LIBRARY removed — its hardcoded IDs caused zombie workouts that could never sync.
+// When both SQLite cache and API are unavailable, the user sees an empty state with a Retry
+// button instead of a misleading "you can pick exercises" list.
 
 const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
 
@@ -75,7 +54,6 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   const [results,     setResults]     = useState<ExerciseItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [useFallback,    setUseFallback]    = useState(false);
-  const [fallbackAlert,  setFallbackAlert]  = useState(false);
 
 
   const [showCustom,     setShowCustom]     = useState(false);
@@ -138,12 +116,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         setResults(list);
         setUseFallback(false);
       } catch {
-        // Step 3: last resort — hardcoded list (IDs won't work with API)
+        // Step 3: nothing to show — backend unreachable AND cache empty.
+        // We deliberately do NOT use FALLBACK_LIBRARY here — its hardcoded IDs
+        // can never sync to the backend, creating zombie workouts.
         setUseFallback(true);
-        let list = FALLBACK_LIBRARY;
-        if (f !== 'All') list = list.filter(e => e.muscle_group === f);
-        if (q.trim()) list = list.filter(e => e.name.toLowerCase().includes(q.toLowerCase()));
-        setResults(list);
+        setResults([]);
       }
     } finally {
       setIsSearching(false);
@@ -157,10 +134,9 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   }, [query, filter, visible, runSearch]);
 
   function selectExercise(ex: ExerciseItem) {
-    if (useFallback) {
-      setFallbackAlert(true);
-      return;
-    }
+    // Defensive: results should be empty when useFallback is true (FALLBACK_LIBRARY removed),
+    // so this branch is unreachable now. Kept as a safety net.
+    if (useFallback) return;
     onAdd(ex);
     reset();
     onClose();
@@ -204,7 +180,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
     setQuery(''); setFilter('All');
     setShowCustom(false);
     setCustomName(''); setCustomMuscle('Chest');
-    setCustomError(null); setFallbackAlert(false);
+    setCustomError(null);
     setResults([]);
   }
 
@@ -295,16 +271,6 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
               ))}
             </ScrollView>
 
-            {useFallback && (
-              <View style={s.offlineBanner}>
-                <Text style={s.offlineText}>
-                  {fallbackAlert
-                    ? 'Connect to the internet to add exercises — offline list is for preview only.'
-                    : 'Offline — connect to sync full library and enable adding exercises.'}
-                </Text>
-              </View>
-            )}
-
             <ScrollView style={s.list} keyboardShouldPersistTaps="handled">
               {results.length > 0 ? (
                 results.map(ex => (
@@ -320,6 +286,20 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
                     <IArrow/>
                   </TouchableOpacity>
                 ))
+              ) : !isSearching && useFallback ? (
+                <View style={s.empty}>
+                  <Text style={s.emptyTitle}>Can't load exercises</Text>
+                  <Text style={s.emptySub}>
+                    Connect to the internet to load the exercise library.
+                  </Text>
+                  <TouchableOpacity
+                    style={s.createBtn}
+                    onPress={() => runSearch(query, filter)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.createBtnText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
               ) : !isSearching && query.trim() ? (
                 <View style={s.empty}>
                   <Text style={s.emptyTitle}>"{query}" not found</Text>

@@ -5,7 +5,9 @@ import {
   saveNutritionLogPending,
   getPendingNutritionLogs,
   markNutritionLogSynced,
+  deleteNutritionLogPending,
 } from '../services/database';
+import { useAuthStore } from './authStore';
 
 // ─── Types ────────────────────────────────────────────────────────
 export interface FoodItem {
@@ -141,9 +143,12 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
         return;
       }
       // Offline: save to SQLite for later sync
+      const userId = useAuthStore.getState().user?.id;
+      if (!userId) return; // not signed in — drop offline save
       const pendingId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       await saveNutritionLogPending({
         id:           pendingId,
+        user_id:      userId,
         food_item_id: foodItemId,
         quantity_g:   quantityG,
         meal_type:    mealType,
@@ -188,8 +193,10 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
   },
 
   syncPending: async () => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) return;
     try {
-      const pending = await getPendingNutritionLogs();
+      const pending = await getPendingNutritionLogs(userId);
       for (const log of pending) {
         try {
           await api.post('/api/nutrition/log', {
@@ -209,8 +216,22 @@ export const useNutritionStore = create<NutritionState>((set, get) => ({
           if (!marked) {
             console.warn(`[nutritionStore] Failed to mark log ${log.id} as synced after 3 attempts`);
           }
-        } catch (syncErr) {
-          console.warn('[nutritionStore] failed to sync nutrition log', log.id, syncErr);
+        } catch (syncErr: any) {
+          const status = syncErr?.response?.status;
+          const detail = syncErr?.response?.data?.detail;
+          // 404 = food_item_id deleted on server; 422 = bad data — these can never succeed.
+          // Delete locally so they don't block forever.
+          if (status === 404 || status === 422) {
+            console.warn(
+              `[nutritionStore] Deleting unsyncable log ${log.id} (status=${status}): ${JSON.stringify(detail)}`,
+            );
+            await deleteNutritionLogPending(log.id).catch(() => {});
+          } else {
+            const reason = detail
+              ? `status=${status}, detail=${JSON.stringify(detail)}`
+              : (syncErr?.message ?? String(syncErr));
+            console.warn(`[nutritionStore] failed to sync nutrition log ${log.id}: ${reason}`);
+          }
         }
       }
       if (pending.length > 0) {

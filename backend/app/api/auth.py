@@ -136,8 +136,15 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/refresh", response_model=AccessTokenResponse)
 def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
     """
-    Принимает refresh_token, возвращает новый access_token.
-    Refresh token при этом НЕ меняется (rotation не реализован для простоты MVP).
+    Refresh token rotation (OAuth 2.0 best practice):
+    - Validates the supplied refresh_token against the stored hash
+    - Issues a NEW access_token AND a NEW refresh_token
+    - Replaces the session's hash and resets expires_at to now + 7 days
+    - As long as the user opens the app at least once per refresh window,
+      they stay signed in indefinitely.
+    - Bonus security: if the refresh_token leaks and is used by an attacker,
+      the legitimate user's next refresh will fail (because the hash changed),
+      surfacing the compromise.
     """
     token_hash = hash_refresh_token(body.refresh_token)
     session = db.query(UserSession).filter(
@@ -158,8 +165,17 @@ def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
             detail="Refresh token expired",
         )
 
-    new_access_token = create_access_token(str(session.user_id))
-    return AccessTokenResponse(access_token=new_access_token)
+    # Rotate: issue new tokens and update the session row
+    new_access_token  = create_access_token(str(session.user_id))
+    new_refresh_token = generate_refresh_token()
+    session.refresh_token_hash = hash_refresh_token(new_refresh_token)
+    session.expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    db.commit()
+
+    return AccessTokenResponse(
+        access_token  = new_access_token,
+        refresh_token = new_refresh_token,
+    )
 
 
 # ─── Logout ───────────────────────────────────────────────────────

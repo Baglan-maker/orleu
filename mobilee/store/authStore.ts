@@ -18,6 +18,17 @@ import {
 } from '../services/storage';
 import { authApi, registerForceLogout } from '../services/api';
 
+// True when the failure was a transport-level error (no server response).
+// Distinguishes "no internet" from "server rejected your credentials".
+function isNetworkError(err: any): boolean {
+  return (
+    !err?.response ||
+    err?.code === 'ERR_NETWORK' ||
+    err?.code === 'ECONNABORTED' ||
+    err?.message === 'Network Error'
+  );
+}
+
 // FastAPI returns 422 validation errors as an array of {type, loc, msg, ...}.
 // 401/400 errors return a plain string. Normalize both to a single message.
 function extractErrorMessage(detail: unknown, fallback: string): string {
@@ -109,10 +120,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
       set({ user: data.user, isLoggedIn: true });
     } catch (err: any) {
-      const msg = extractErrorMessage(
-        err?.response?.data?.detail,
-        'Login failed. Check your credentials.',
-      );
+      const msg = isNetworkError(err)
+        ? 'No internet connection. Sign-in requires a network.'
+        : extractErrorMessage(
+            err?.response?.data?.detail,
+            'Login failed. Check your credentials.',
+          );
       set({ error: msg });
       throw err; // пробрасываем чтобы компонент мог среагировать
     }
@@ -130,10 +143,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
       set({ user: res.user, isLoggedIn: true });
     } catch (err: any) {
-      const msg = extractErrorMessage(
-        err?.response?.data?.detail,
-        'Registration failed. Try again.',
-      );
+      const msg = isNetworkError(err)
+        ? 'No internet connection. Account creation requires a network.'
+        : extractErrorMessage(
+            err?.response?.data?.detail,
+            'Registration failed. Try again.',
+          );
       set({ error: msg });
       throw err;
     }
@@ -141,6 +156,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // ── logout ───────────────────────────────────────────────────
   logout: async () => {
+    const previousUserId = get().user?.id;
     try {
       const refreshToken = await getRefreshToken();
       if (refreshToken) {
@@ -149,6 +165,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
     } finally {
       await clearAll();
+      // Wipe this user's unsynced local data so the next user doesn't inherit it.
+      if (previousUserId) {
+        try {
+          const { clearLocalDataForUser } = await import('../services/database');
+          await clearLocalDataForUser(previousUserId);
+        } catch (err) {
+          console.warn('[authStore] Failed to clear local data on logout:', err);
+        }
+      }
       set({ user: null, isLoggedIn: false });
     }
   },

@@ -74,8 +74,14 @@ class RefreshRequest(BaseModel):
 
 
 class AccessTokenResponse(BaseModel):
-    access_token: str
-    token_type:   str = "bearer"
+    """
+    Returned by /api/auth/refresh.
+    Includes a freshly-rotated refresh_token: the previous one is invalidated
+    on the server. This way an active user stays signed in indefinitely.
+    """
+    access_token:  str
+    refresh_token: str
+    token_type:    str = "bearer"
 
 
 class MessageResponse(BaseModel):

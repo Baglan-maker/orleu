@@ -28,6 +28,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
     CREATE TABLE IF NOT EXISTS workouts_local (
       id               TEXT PRIMARY KEY,
+      user_id          TEXT,
       workout_date     TEXT NOT NULL,
       duration_minutes INTEGER,
       notes            TEXT,
@@ -47,11 +48,6 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
       order_index      INTEGER NOT NULL DEFAULT 0
     );
 
-    -- Migrate existing table: add sets_data if missing (idempotent)
-    CREATE TABLE IF NOT EXISTS _schema_migrations (
-      key TEXT PRIMARY KEY
-    );
-
     CREATE TABLE IF NOT EXISTS app_meta (
       key   TEXT PRIMARY KEY,
       value TEXT
@@ -59,6 +55,7 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
     CREATE TABLE IF NOT EXISTS nutrition_logs_pending (
       id           TEXT PRIMARY KEY,
+      user_id      TEXT,
       food_item_id TEXT NOT NULL,
       quantity_g   REAL NOT NULL,
       meal_type    TEXT NOT NULL,
@@ -68,20 +65,76 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
     );
   `);
 
-  // Migrate existing installs: add sets_data column if absent
+  await runMigrations(_db);
+  return _db;
+}
+
+async function runAlterIgnoreDuplicate(
+  db: SQLite.SQLiteDatabase,
+  sql: string,
+  context: string,
+): Promise<void> {
   try {
-    await _db.execAsync(
-      `ALTER TABLE workout_exercises_local ADD COLUMN sets_data TEXT`
-    );
+    await db.execAsync(sql);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Only silence "duplicate column" errors — surface anything else
     if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
-      console.error('[database] Failed to add sets_data column:', msg);
+      console.error(`[database] ${context}:`, msg);
     }
   }
+}
 
-  return _db;
+async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Add sets_data column to workout_exercises_local (legacy migration)
+  await runAlterIgnoreDuplicate(
+    db,
+    `ALTER TABLE workout_exercises_local ADD COLUMN sets_data TEXT`,
+    'Add sets_data column failed',
+  );
+
+  // Add user_id columns for multi-user safety
+  await runAlterIgnoreDuplicate(
+    db,
+    `ALTER TABLE workouts_local ADD COLUMN user_id TEXT`,
+    'Add user_id to workouts_local failed',
+  );
+  await runAlterIgnoreDuplicate(
+    db,
+    `ALTER TABLE nutrition_logs_pending ADD COLUMN user_id TEXT`,
+    'Add user_id to nutrition_logs_pending failed',
+  );
+
+  // ── ONE-TIME CLEANUP: nuke orphaned rows from before user_id was tracked ──
+  // These are pre-migration zombies (no user_id) — they have stale fallback exercise IDs
+  // that can never sync. Removing them is safe and clears the stuck pending counter.
+  try {
+    const orphanWorkouts = await db.runAsync(
+      `DELETE FROM workouts_local WHERE user_id IS NULL`,
+    );
+    const orphanExercises = await db.runAsync(
+      `DELETE FROM workout_exercises_local
+        WHERE workout_local_id NOT IN (SELECT id FROM workouts_local)`,
+    );
+    const orphanNutrition = await db.runAsync(
+      `DELETE FROM nutrition_logs_pending WHERE user_id IS NULL`,
+    );
+    if (orphanWorkouts.changes > 0 || orphanExercises.changes > 0 || orphanNutrition.changes > 0) {
+      console.log(
+        `[database] Cleared legacy orphans: ` +
+        `${orphanWorkouts.changes} workouts, ` +
+        `${orphanExercises.changes} exercises, ` +
+        `${orphanNutrition.changes} nutrition logs`,
+      );
+    }
+  } catch (err) {
+    console.warn('[database] Orphan cleanup skipped:', err);
+  }
+}
+
+// ─── UUID validation ──────────────────────────────────────────────
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isValidUUID(s: string): boolean {
+  return typeof s === 'string' && UUID_REGEX.test(s);
 }
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -111,6 +164,7 @@ export interface LocalWorkoutExercise {
 
 export interface LocalWorkout {
   id:               string;
+  user_id:          string;
   workout_date:     string;
   duration_minutes: number | null;
   notes:            string | null;
@@ -176,10 +230,11 @@ export async function saveWorkoutLocal(workout: LocalWorkout): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT OR REPLACE INTO workouts_local
-         (id, workout_date, duration_minutes, notes, synced, created_at)
-       VALUES (?, ?, ?, ?, 0, datetime('now'))`,
+         (id, user_id, workout_date, duration_minutes, notes, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
       [
         workout.id,
+        workout.user_id,
         workout.workout_date,
         workout.duration_minutes ?? null,
         workout.notes ?? null,
@@ -208,16 +263,46 @@ export async function saveWorkoutLocal(workout: LocalWorkout): Promise<void> {
   });
 }
 
-export async function getPendingWorkouts(): Promise<any[]> {
+export async function getPendingWorkouts(userId: string): Promise<any[]> {
   const db = await getDb();
   return db.getAllAsync(
-    'SELECT * FROM workouts_local WHERE synced = 0 ORDER BY created_at ASC'
+    'SELECT * FROM workouts_local WHERE synced = 0 AND user_id = ? ORDER BY created_at ASC',
+    [userId],
   );
 }
 
 export async function markWorkoutSynced(localId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE workouts_local SET synced = 1 WHERE id = ?', [localId]);
+}
+
+/**
+ * Delete a local workout entirely (cascading to its exercises).
+ * Used to nuke zombie workouts that can never sync (invalid exercise IDs).
+ */
+export async function deleteWorkoutLocal(localId: string): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM workout_exercises_local WHERE workout_local_id = ?', [localId]);
+    await db.runAsync('DELETE FROM workouts_local WHERE id = ?', [localId]);
+  });
+}
+
+/**
+ * Wipe all unsynced local data for a specific user. Called on logout
+ * so the next user doesn't inherit data leaked from the previous session.
+ */
+export async function clearLocalDataForUser(userId: string): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `DELETE FROM workout_exercises_local
+        WHERE workout_local_id IN (SELECT id FROM workouts_local WHERE user_id = ?)`,
+      [userId],
+    );
+    await db.runAsync('DELETE FROM workouts_local WHERE user_id = ?', [userId]);
+    await db.runAsync('DELETE FROM nutrition_logs_pending WHERE user_id = ?', [userId]);
+  });
 }
 
 interface RawLocalExercise {
@@ -258,10 +343,11 @@ export async function getLastSessionSetsData(exerciseId: string): Promise<SetEnt
   return JSON.parse(row.sets_data) as SetEntry[];
 }
 
-export async function getPendingCount(): Promise<number> {
+export async function getPendingCount(userId: string): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ cnt: number }>(
-    'SELECT COUNT(*) as cnt FROM workouts_local WHERE synced = 0'
+    'SELECT COUNT(*) as cnt FROM workouts_local WHERE synced = 0 AND user_id = ?',
+    [userId],
   );
   return row?.cnt ?? 0;
 }
@@ -287,6 +373,7 @@ async function setMeta(key: string, value: string): Promise<void> {
 // ─── Nutrition pending logs ────────────────────────────────────────
 export interface PendingNutritionLog {
   id:           string;
+  user_id:      string;
   food_item_id: string;
   quantity_g:   number;
   meal_type:    string;
@@ -297,22 +384,28 @@ export async function saveNutritionLogPending(log: PendingNutritionLog): Promise
   const db = await getDb();
   await db.runAsync(
     `INSERT OR REPLACE INTO nutrition_logs_pending
-       (id, food_item_id, quantity_g, meal_type, date, synced, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, datetime('now'))`,
-    [log.id, log.food_item_id, log.quantity_g, log.meal_type, log.date]
+       (id, user_id, food_item_id, quantity_g, meal_type, date, synced, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))`,
+    [log.id, log.user_id, log.food_item_id, log.quantity_g, log.meal_type, log.date]
   );
 }
 
-export async function getPendingNutritionLogs(): Promise<PendingNutritionLog[]> {
+export async function getPendingNutritionLogs(userId: string): Promise<PendingNutritionLog[]> {
   const db = await getDb();
   return db.getAllAsync<PendingNutritionLog>(
-    'SELECT id, food_item_id, quantity_g, meal_type, date FROM nutrition_logs_pending WHERE synced = 0 ORDER BY created_at ASC'
+    'SELECT id, user_id, food_item_id, quantity_g, meal_type, date FROM nutrition_logs_pending WHERE synced = 0 AND user_id = ? ORDER BY created_at ASC',
+    [userId],
   );
 }
 
 export async function markNutritionLogSynced(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE nutrition_logs_pending SET synced = 1 WHERE id = ?', [id]);
+}
+
+export async function deleteNutritionLogPending(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM nutrition_logs_pending WHERE id = ?', [id]);
 }
 
 export { getDb };
