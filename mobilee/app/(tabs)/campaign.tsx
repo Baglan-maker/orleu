@@ -1,7 +1,7 @@
 // mobile/app/(tabs)/campaign.tsx
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Animated, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,6 +39,60 @@ interface DisplayNode {
   sub:     string;
   status:  NodeStatus;
   chapter: ChapterResponse | null;
+}
+
+// ─── Animated node indicator: pulse on active, glow on done ──────
+function NodeIndicator({ status, children }: { status: NodeStatus; children: React.ReactNode }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  const glow  = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (status !== 'active') { pulse.setValue(1); glow.setValue(0.5); return; }
+    const loop = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.08, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.timing(glow, { toValue: 0.95, duration: 900, useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 0.5,  duration: 900, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [status]);
+
+  const ringColor =
+    status === 'done'   ? `${Colors.up}55` :
+    status === 'active' ? `${Colors.cr}55` :
+    'transparent';
+
+  return (
+    <View style={s.nodeIndicatorWrap}>
+      {(status === 'active' || status === 'done') && (
+        <Animated.View
+          style={[
+            s.nodeRing,
+            { borderColor: ringColor },
+            status === 'active' && { opacity: glow, transform: [{ scale: pulse }] },
+          ]}
+        />
+      )}
+      <Animated.View
+        style={[
+          s.nodeCircle,
+          status === 'done'   && s.nodeDone,
+          status === 'active' && s.nodeActive,
+          status === 'locked' && s.nodeLocked,
+          status === 'active' && { transform: [{ scale: pulse }] },
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
 }
 
 // ── Campaign completion XP bonus (mirrors backend CAMPAIGN_COMPLETION_BONUS) ──
@@ -158,6 +212,19 @@ export default function CampaignScreen() {
   const pct           = totalChapters > 0 ? Math.round(doneCount / totalChapters * 100) : 0;
   const pathChosen    = !!(progress?.campaign_path);
 
+  // Aggregate requirement progress for the active chapter, surfaced
+  // on the collapsed row so users don't need to expand to see status.
+  const reqMetCount   = requirements.filter(r => r.met).length;
+  const reqTotalCount = requirements.length;
+  const reqPct        = reqTotalCount > 0
+    ? Math.round(
+        requirements.reduce((acc, r) => {
+          const capped = Math.min(r.current, r.target);
+          return acc + (r.target > 0 ? capped / r.target : (r.met ? 1 : 0));
+        }, 0) / reqTotalCount * 100
+      )
+    : 0;
+
   const startDone = doneCount > 0 || !!progress?.current_chapter_id || allComplete;
   const nodes: DisplayNode[] = [
     { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null },
@@ -263,16 +330,11 @@ export default function CampaignScreen() {
                   activeOpacity={node.status === 'locked' ? 0.5 : 0.75}
                   onPress={() => setExpandedId(expandedId === node.id ? null : node.id)}
                 >
-                  <View style={[
-                    s.nodeCircle,
-                    node.status === 'done'   && s.nodeDone,
-                    node.status === 'active' && s.nodeActive,
-                    node.status === 'locked' && s.nodeLocked,
-                  ]}>
+                  <NodeIndicator status={node.status}>
                     {node.status === 'done'   && <ICheck/>}
                     {node.status === 'active' && <IZap/>}
                     {node.status === 'locked' && <ILock/>}
-                  </View>
+                  </NodeIndicator>
 
                   <View style={{ flex: 1 }}>
                     <Text style={[s.nodeLabel, node.status === 'locked' && { color: Colors.t3 }]}>
@@ -288,6 +350,20 @@ export default function CampaignScreen() {
                         {node.sub}
                       </Text>
                     ) : null}
+
+                    {/* At-a-glance progress for the active chapter */}
+                    {node.status === 'active' && reqTotalCount > 0 && (
+                      <View style={s.nodeProgressWrap}>
+                        <View style={s.nodeProgressBarBg}>
+                          <View style={[
+                            s.nodeProgressBarFill,
+                            { width: `${reqPct}%` },
+                            reqMetCount === reqTotalCount && { backgroundColor: Colors.up },
+                          ]}/>
+                        </View>
+                        <Text style={s.nodeProgressTxt}>{reqMetCount}/{reqTotalCount}</Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Chevron */}
@@ -568,12 +644,22 @@ const s = StyleSheet.create({
   campaignBannerText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr, letterSpacing: 0.2 },
 
   nodeRow:    { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 6 },
+  nodeIndicatorWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  nodeRing: {
+    position: 'absolute',
+    width: 56, height: 56, borderRadius: 28,
+    borderWidth: 2,
+  },
   nodeCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   nodeDone:   { backgroundColor: `${Colors.up}15`,  borderWidth: 1.5, borderColor: `${Colors.up}35`  },
   nodeActive: { backgroundColor: Colors.crLo,        borderWidth: 1.5, borderColor: Colors.cr         },
   nodeLocked: { backgroundColor: Colors.s3,          borderWidth: 1.5, borderColor: Colors.line, opacity: 0.4 },
   nodeLabel:  { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, lineHeight: 20 },
   nodeSub:    { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2 },
+  nodeProgressWrap:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  nodeProgressBarBg:   { flex: 1, height: 3, backgroundColor: Colors.s4, borderRadius: 2, overflow: 'hidden' },
+  nodeProgressBarFill: { height: 3, backgroundColor: Colors.cr, borderRadius: 2 },
+  nodeProgressTxt:     { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.t3 },
 
   connector: { width: 2, height: 24, marginLeft: 21, backgroundColor: Colors.line },
 

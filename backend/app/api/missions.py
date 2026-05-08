@@ -132,6 +132,21 @@ def accept_mission(
     if not template:
         raise HTTPException(status_code=404, detail="Mission template not found")
 
+
+    # Defense-in-depth: path-locked templates require a matching campaign_path.
+    # The /missions list already filters these out, but a client cannot bypass
+    # the gate by accepting a known template id directly.
+    if template.campaign_path_filter:
+        progress_for_path = db.query(UserProgress).filter(
+            UserProgress.user_id == current_user.id
+        ).first()
+        user_path = progress_for_path.campaign_path if progress_for_path else None
+        if not user_path or template.campaign_path_filter != user_path:
+            raise HTTPException(
+                status_code=403,
+                detail="This mission requires a matching campaign path. Choose your path first.",
+            )
+
     # Check if already active
     now = datetime.now(timezone.utc)
     existing = (
