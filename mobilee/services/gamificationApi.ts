@@ -115,6 +115,9 @@ export interface AvailableMissionsResponse {
   expired:   UserMissionResponse[];   // recently expired (last 7 days), shown as a banner until dismissed
   available: MissionTemplateResponse[];
   trend:     MlTrend | null;          // current ML-driven ordering — null if cold start
+  reroll_available: boolean;
+  reroll_cost:      number;           // coin cost to reroll an active mission
+  next_reroll_at:   string | null;    // ISO timestamp when next reroll unlocks (null if available now)
 }
 
 // ─── ML / Coach types ───────────────────────────────────────────
@@ -171,6 +174,9 @@ export const missionApi = {
 
   accept: (templateId: string) =>
     api.post<UserMissionResponse>(`/api/missions/${templateId}/accept`),
+
+  reroll: (userMissionId: string) =>
+    api.post<UserMissionResponse>(`/api/missions/${userMissionId}/reroll`),
 };
 
 export const coachApi = {

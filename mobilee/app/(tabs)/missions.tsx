@@ -29,6 +29,24 @@ function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill
 function IUp()     { return <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
 function IZap(c: string = Colors.t3) { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>; }
 function ICheck()  { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
+function IShuffle({ color = Colors.t2 }: { color?: string }) {
+  return (
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Polyline points="16 3 21 3 21 8"/>
+      <Path d="M4 20L21 3"/>
+      <Polyline points="21 16 21 21 16 21"/>
+      <Path d="M15 15l6 6"/>
+      <Path d="M4 4l5 5"/>
+    </Svg>
+  );
+}
+function ICoinSm({ color = Colors.bone }: { color?: string }) {
+  return (
+    <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v8M9 12h6"/>
+    </Svg>
+  );
+}
 
 type DifficultyLevel = 'hard' | 'medium' | 'easy';
 
@@ -68,6 +86,11 @@ export default function MissionsScreen() {
   const [trend, setTrend]             = useState<MlTrend | null>(null);
   const [coachMsg, setCoachMsg]       = useState<CoachMessageResponse | null>(null);
   const [userLevel, setUserLevel]     = useState<number>(1);
+  const [userCoins, setUserCoins]     = useState<number>(0);
+  const [rerollAvailable, setRerollAvailable] = useState<boolean>(true);
+  const [rerollCost,      setRerollCost]      = useState<number>(0);
+  const [nextRerollAt,    setNextRerollAt]    = useState<string | null>(null);
+  const [rerollingId,     setRerollingId]     = useState<string | null>(null);
   const [selected, setSelected]       = useState<string[]>([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -88,7 +111,13 @@ export default function MissionsScreen() {
       setExpiredMissions(expired);
       setAvailableTemplates(missionsRes.data.available);
       setTrend(missionsRes.data.trend ?? null);
-      if (progressRes) setUserLevel(progressRes.data.level);
+      setRerollAvailable(missionsRes.data.reroll_available ?? true);
+      setRerollCost(missionsRes.data.reroll_cost ?? 0);
+      setNextRerollAt(missionsRes.data.next_reroll_at ?? null);
+      if (progressRes) {
+        setUserLevel(progressRes.data.level);
+        setUserCoins(progressRes.data.coins ?? 0);
+      }
       // Prefer latest unread; fall back to latest read so the AI Coach card always has content
       const msgs = coachRes?.data ?? [];
       setCoachMsg(msgs.find(m => !m.is_read) ?? msgs[0] ?? null);
@@ -109,6 +138,58 @@ export default function MissionsScreen() {
     try { await fetchMissions(); }
     finally { setRefreshing(false); }
   }, [fetchMissions]);
+
+  // ── Reroll an active mission ────────────────────────────────────
+  // Once-per-week, costs coins. Confirmation dialog spells out both costs
+  // before firing — the request itself is gated server-side too, so the UI
+  // is purely UX (snappy disable, helpful messaging).
+  function handleReroll(mission: UserMissionResponse) {
+    if (!rerollAvailable) {
+      const next = nextRerollAt ? new Date(nextRerollAt) : null;
+      const days = next
+        ? Math.max(1, Math.ceil((next.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+        : null;
+      Alert.alert(
+        'Reroll on cooldown',
+        days
+          ? `You can swap a mission again in ${days} day${days === 1 ? '' : 's'}.`
+          : 'You can swap a mission again later this week.',
+      );
+      return;
+    }
+    if (userCoins < rerollCost) {
+      Alert.alert(
+        'Not enough coins',
+        `Reroll costs ${rerollCost} coins. You have ${userCoins}. Earn coins by completing workouts and missions.`,
+      );
+      return;
+    }
+    Alert.alert(
+      'Swap this mission?',
+      `"${mission.name}" will be replaced with a different mission.\n\nCost: ${rerollCost} coins\nYou won't be able to swap again for 7 days.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Swap',
+          style: 'destructive',
+          onPress: async () => {
+            setRerollingId(mission.id);
+            try {
+              await missionApi.reroll(mission.id);
+              await fetchMissions();
+            } catch (err: unknown) {
+              const detail =
+                (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                ?? 'Could not swap mission. Try again.';
+              Alert.alert('Reroll failed', detail);
+            } finally {
+              setRerollingId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -287,6 +368,29 @@ export default function MissionsScreen() {
                       {IZap(Colors.t3)}
                       <Text style={s.xpText}>{m.xp_reward} XP</Text>
                     </View>
+                    <View style={{ flex: 1 }}/>
+                    <TouchableOpacity
+                      onPress={() => handleReroll(m)}
+                      disabled={rerollingId !== null}
+                      activeOpacity={0.75}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={[
+                        s.rerollBtn,
+                        !rerollAvailable && s.rerollBtnDisabled,
+                        rerollingId === m.id && s.rerollBtnLoading,
+                      ]}
+                    >
+                      <IShuffle color={rerollAvailable ? Colors.t1 : Colors.t3}/>
+                      <Text style={[s.rerollBtnText, !rerollAvailable && s.rerollBtnTextDisabled]}>
+                        {rerollingId === m.id ? 'Swapping…' : 'Swap'}
+                      </Text>
+                      {rerollAvailable && rerollCost > 0 && (
+                        <View style={s.rerollCost}>
+                          <ICoinSm color={Colors.bone}/>
+                          <Text style={s.rerollCostText}>{rerollCost}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -606,5 +710,48 @@ const s = StyleSheet.create({
   },
   expiredDismissText: {
     fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 0.8, color: Colors.t2,
+  },
+
+  // Reroll button on active mission cards
+  rerollBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: Colors.s3,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radius.full,
+  },
+  rerollBtnDisabled: {
+    opacity: 0.4,
+  },
+  rerollBtnLoading: {
+    opacity: 0.6,
+  },
+  rerollBtnText: {
+    fontSize: 11,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.4,
+    color: Colors.t1,
+  },
+  rerollBtnTextDisabled: {
+    color: Colors.t3,
+  },
+  rerollCost: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.s4,
+    borderRadius: Radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginLeft: 2,
+  },
+  rerollCostText: {
+    fontSize: 10,
+    fontFamily: Fonts.monoBold,
+    color: Colors.bone,
   },
 });

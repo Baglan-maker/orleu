@@ -163,3 +163,8 @@ class AvailableMissionsOut(BaseModel):
     # ML trend used to order `available`; null if user is in cold-start.
     # improving → hardest first, declining → easiest first, plateau → unsorted.
     trend:     Optional[str] = None
+    # Reroll status — surface so the UI can disable/enable the "swap" button
+    # and show coin cost + cooldown without an extra round-trip.
+    reroll_available: bool = True
+    reroll_cost:      int = 0
+    next_reroll_at:   Optional[datetime] = None
