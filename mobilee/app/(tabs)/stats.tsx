@@ -25,7 +25,6 @@ import { WorkoutHeatmap }  from '../../components/profile/WorkoutHeatmap';
 import {
   MuscleDistribution, buildMuscleData, type MuscleItem,
 } from '../../components/profile/MuscleDistribution';
-import { getSeenPrs, markPrsSeen } from '../../services/storage';
 
 // ─── SVG Icons (stroke-only) ─────────────────────────────────────
 function IGear() {
@@ -197,7 +196,6 @@ export default function ProfileScreen() {
   const [mlStatus,       setMlStatus]       = useState<MlStatusResponse | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [fetchError,     setFetchError]     = useState<string | null>(null);
-  const [newPrIds,       setNewPrIds]       = useState<Set<string>>(new Set());
   const [xpInfoOpen,     setXpInfoOpen]     = useState(false);
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
@@ -241,18 +239,6 @@ export default function ProfileScreen() {
       setMlStatus(mlRes?.data ?? null);
       fetchAchievements();
       setFetchError(null);
-
-      // Detect PRs the user hasn't seen yet so we can highlight them.
-      // Fingerprint includes achieved_at so beating an old PR re-fires the badge.
-      const seen = await getSeenPrs();
-      const seenSet = new Set(seen);
-      const fresh = prsRes.data
-        .map(pr => `${pr.exercise_id}:${pr.achieved_at}`)
-        .filter(fp => !seenSet.has(fp));
-      if (!isCancelled() && fresh.length > 0) {
-        setNewPrIds(new Set(fresh));
-        markPrsSeen(fresh);
-      }
 
       // Fetch muscle data for last 7 days
       const sevenDaysAgo = new Date();
@@ -307,13 +293,6 @@ export default function ProfileScreen() {
       } as any).start();
     });
   }, [weeklyData]);
-
-  // Clear the NEW-PR highlight after the user has had time to notice it.
-  useEffect(() => {
-    if (newPrIds.size === 0) return;
-    const t = setTimeout(() => setNewPrIds(new Set()), 6000);
-    return () => clearTimeout(t);
-  }, [newPrIds]);
 
   const xp       = progress?.xp ?? 0;
   const level    = progress?.level ?? 1;
@@ -578,18 +557,11 @@ export default function ProfileScreen() {
               {prs.slice(0, 20).map((pr) => {
                 const d = new Date(pr.achieved_at);
                 const dateStr = `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
-                const fp = `${pr.exercise_id}:${pr.achieved_at}`;
-                const isNew = newPrIds.has(fp);
                 return (
-                  <View key={pr.exercise_id} style={[s.prCard, isNew && s.prCardNew]}>
-                    {isNew && (
-                      <View style={s.prNewBadge}>
-                        <Text style={s.prNewBadgeText}>NEW</Text>
-                      </View>
-                    )}
+                  <View key={pr.exercise_id} style={s.prCard}>
                     <Text style={s.prMuscle}>{pr.muscle_group}</Text>
                     <Text style={s.prName} numberOfLines={1}>{pr.exercise_name}</Text>
-                    <Text style={[s.prWeight, isNew && { color: Colors.cr }]}>{pr.weight_kg} <Text style={s.prUnit}>kg</Text></Text>
+                    <Text style={s.prWeight}>{pr.weight_kg} <Text style={s.prUnit}>kg</Text></Text>
                     <Text style={s.prDate}>{dateStr}</Text>
                   </View>
                 );
@@ -1069,27 +1041,6 @@ const s = StyleSheet.create({
     fontFamily: Fonts.regular,
     color: Colors.t3,
     lineHeight: 15,
-  },
-
-  // PR NEW badge + glow
-  prCardNew: {
-    borderColor: Colors.crBdr,
-    backgroundColor: Colors.crLo,
-    shadowColor: Colors.cr,
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
-  },
-  prNewBadge: {
-    position: 'absolute',
-    top: 8, right: 8,
-    backgroundColor: Colors.cr,
-    borderRadius: Radius.full,
-    paddingHorizontal: 6, paddingVertical: 2,
-  },
-  prNewBadgeText: {
-    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 0.8, color: Colors.bone,
   },
 
   // Streak rule hint
