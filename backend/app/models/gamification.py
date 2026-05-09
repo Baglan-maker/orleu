@@ -1,6 +1,6 @@
 # app/models/gamification.py
 import uuid
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,6 +47,9 @@ class UserProgress(Base):
     current_streak      = Column(Integer, default=0)
     longest_streak      = Column(Integer, default=0)
     streak_freezes      = Column(Integer, default=0, nullable=False)
+    # When set, equals the date on which the +5% XP nutrition buff is usable.
+    # Earned by hitting protein goal today; consumed by the first workout that day.
+    nutrition_buff_date = Column(Date, nullable=True)
     current_campaign_id      = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True)
     current_chapter_id       = Column(UUID(as_uuid=True), ForeignKey("campaign_chapters.id"), nullable=True)
     campaign_path            = Column(String(1), nullable=True)

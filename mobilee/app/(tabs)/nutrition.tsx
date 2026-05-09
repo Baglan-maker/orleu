@@ -1,5 +1,5 @@
 // mobile/app/(tabs)/nutrition.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Alert,
   RefreshControl,
@@ -24,6 +24,13 @@ import {
   type NutritionDayResponse,
 } from '../../store/nutritionStore';
 import { api } from '../../services/api';
+import { BuffToast } from '../../components/ui/BuffToast';
+
+interface BuffClaimResponse {
+  granted:        boolean;
+  valid_for_date: string | null;
+  reason:         string | null;
+}
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IChevronLeft() {
@@ -142,6 +149,10 @@ export default function NutritionScreen() {
   const [deletingId, setDeletingId]  = useState<string | null>(null);
   const [copyingMeal, setCopyingMeal] = useState<MealType | null>(null);
   const [refreshing, setRefreshing]   = useState(false);
+  const [buffToastVisible, setBuffToastVisible] = useState(false);
+  // Tracks "did we already cross the protein threshold this session" so we
+  // don't re-fire the toast every render once the ring stays full.
+  const proteinClaimedRef = useRef(false);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -243,6 +254,34 @@ export default function NutritionScreen() {
   // Pace marker only makes sense for today — past days are "done", future days haven't started.
   const pacePct: number | undefined = isToday ? dayPacePct() : undefined;
   const dateStrip = buildDateStrip(selectedDate);
+
+  // Reset the "claimed this session" flag whenever the visible date changes,
+  // so navigating away from today and back doesn't lock out the toast forever.
+  useEffect(() => {
+    proteinClaimedRef.current = false;
+  }, [selectedDate]);
+
+  // Buff trigger: when viewing today and protein crosses the goal, attempt to
+  // claim the buff. The backend is idempotent — a second call on the same day
+  // returns granted=false. We only show the toast on a real grant.
+  useEffect(() => {
+    if (!isToday) return;
+    if (proteinClaimedRef.current) return;
+    if (totalPro < goalPro) return;
+    if (goalPro <= 0) return;
+
+    proteinClaimedRef.current = true;
+    (async () => {
+      try {
+        const { data } = await api.post<BuffClaimResponse>('/api/nutrition/claim-buff');
+        if (data.granted) setBuffToastVisible(true);
+      } catch {
+        // soft-fail — the buff retry happens automatically next time the
+        // user reloads the screen since the ref is reset on date change.
+        proteinClaimedRef.current = false;
+      }
+    })();
+  }, [totalPro, goalPro, isToday]);
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -465,6 +504,13 @@ export default function NutritionScreen() {
           onAdd={handleAddFood}
         />
       )}
+
+      <BuffToast
+        visible={buffToastVisible}
+        onHide={() => setBuffToastVisible(false)}
+        title="BUFF EARNED"
+        detail="+5% XP for tomorrow's workout"
+      />
     </SafeAreaView>
   );
 }

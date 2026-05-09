@@ -9,13 +9,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models import User, FoodItem, NutritionLog, UserNutritionGoals
+from app.models import User, FoodItem, NutritionLog, UserNutritionGoals, UserProgress
 from app.schemas.nutrition import (
     DailyNutritionOut,
     DailyTotalsOut,
     FoodItemCreate,
     FoodItemOut,
     MealSummaryOut,
+    NutritionBuffClaim,
     NutritionGoalsOut,
     NutritionGoalsPatch,
     NutritionLogCreate,
@@ -25,6 +26,9 @@ from app.schemas.nutrition import (
     MEAL_TYPES,
 )
 from app.services.dependencies import get_current_user
+
+# Nutrition-driven gameplay buff: hitting protein goal earns +5% XP on tomorrow's workout.
+NUTRITION_BUFF_XP_MULT = 1.05
 
 router = APIRouter()
 
@@ -351,3 +355,58 @@ def patch_goals(
     db.commit()
     db.refresh(goals)
     return goals
+
+
+# ── Buff ──────────────────────────────────────────────────────────────────────
+
+@router.post("/claim-buff", response_model=NutritionBuffClaim)
+def claim_nutrition_buff(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Idempotent: if the user has hit their protein goal today and the buff
+    hasn't been granted yet, sets nutrition_buff_date = tomorrow so the next
+    day's workout earns +5% XP. Replays return granted=False with a reason.
+    """
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+
+    progress = (
+        db.query(UserProgress)
+        .filter(UserProgress.user_id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+    if not progress:
+        raise HTTPException(status_code=404, detail="Progress not found")
+
+    # Already granted for tomorrow — no-op.
+    if progress.nutrition_buff_date == tomorrow:
+        return NutritionBuffClaim(
+            granted=False,
+            valid_for_date=tomorrow,
+            reason="Already claimed today — buff is queued for tomorrow.",
+        )
+
+    goals = _get_or_create_goals(current_user.id, db)
+
+    total_protein = (
+        db.query(func.coalesce(func.sum(NutritionLog.protein_g), 0.0))
+        .filter(
+            NutritionLog.user_id == current_user.id,
+            NutritionLog.date == today,
+        )
+        .scalar()
+    ) or 0.0
+
+    if total_protein < goals.protein_goal_g:
+        return NutritionBuffClaim(
+            granted=False,
+            valid_for_date=None,
+            reason=f"Protein goal not met yet ({total_protein:.0f}g / {goals.protein_goal_g}g).",
+        )
+
+    progress.nutrition_buff_date = tomorrow
+    db.commit()
+    return NutritionBuffClaim(granted=True, valid_for_date=tomorrow)

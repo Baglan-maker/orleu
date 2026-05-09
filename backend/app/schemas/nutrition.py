@@ -93,6 +93,15 @@ class DailyTotalsOut(BaseModel):
     fat_g:     float
 
 
+# ── Buff ──────────────────────────────────────────────────────────────────────
+
+class NutritionBuffClaim(BaseModel):
+    """Response for POST /api/nutrition/claim-buff."""
+    granted:        bool
+    valid_for_date: Optional[date] = None
+    reason:         Optional[str]  = None  # populated only when not granted
+
+
 # ── Goals ─────────────────────────────────────────────────────────────────────
 
 class NutritionGoalsOut(BaseModel):

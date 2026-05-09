@@ -330,6 +330,15 @@ export default function ProfileScreen() {
   const longest  = progress?.longest_streak ?? 0;
   const coins    = progress?.coins ?? 0;
   const freezes  = progress?.streak_freezes ?? 0;
+  const buffDate = progress?.nutrition_buff_date ?? null;
+  // The buff is "active" once today's date matches buff_date (next workout consumes it).
+  // It's "pending" when buff_date is in the future (earned today, usable tomorrow).
+  const todayLocalISO = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const buffActive  = buffDate != null && buffDate === todayLocalISO;
+  const buffPending = buffDate != null && buffDate > todayLocalISO;
 
   const isMaxLevel = level >= 5;
   const xpNext   = xpForLevel(level); // 0 when max level
@@ -440,6 +449,23 @@ export default function ProfileScreen() {
           <Text style={s.scoreLabel}>ASCENT SCORE</Text>
           <Text style={s.scoreValue}>{score}</Text>
         </View>
+
+        {/* ── Nutrition buff banner ── */}
+        {(buffActive || buffPending) && (
+          <View style={s.buffBanner}>
+            <Text style={s.buffBannerIcon}>🥩</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.buffBannerTitle}>
+                {buffActive ? '+5% XP buff active' : '+5% XP buff queued'}
+              </Text>
+              <Text style={s.buffBannerSub}>
+                {buffActive
+                  ? 'Your next workout earns +5% XP — go log a session.'
+                  : "Tomorrow's first workout earns +5% XP. Keep it up!"}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ── Stat Pills ── */}
         <View style={s.pillRow}>
@@ -781,6 +807,36 @@ const s = StyleSheet.create({
     fontFamily: Fonts.monoBold,
     color: Colors.bone,
     letterSpacing: -1,
+  },
+
+  // ── Nutrition buff banner ──
+  buffBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    padding: 12,
+    backgroundColor: 'rgba(157,212,155,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(157,212,155,0.30)',
+    borderRadius: Radius.md,
+  },
+  buffBannerIcon: {
+    fontSize: 22,
+  },
+  buffBannerTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: '#9DD49B',
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  buffBannerSub: {
+    fontSize: 11,
+    fontFamily: Fonts.regular,
+    color: Colors.t2,
+    lineHeight: 15,
   },
 
   // ── Stat Pills ──

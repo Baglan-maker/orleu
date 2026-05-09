@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List, Literal
 from uuid import UUID
-from datetime import datetime
+from datetime import date, datetime
 
 
 # ─── Achievements ─────────────────────────────────────────────────
@@ -39,6 +39,7 @@ class ProgressOut(BaseModel):
     current_streak:          int
     longest_streak:          int
     streak_freezes:          int = 0
+    nutrition_buff_date:     Optional[date] = None  # ISO date when the +5% XP buff applies
     current_campaign_id:     Optional[UUID] = None
     current_chapter_id:      Optional[UUID] = None
     campaign_path:           Optional[str] = None

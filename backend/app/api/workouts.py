@@ -74,6 +74,14 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
         + int(total_volume / 1000) * XP_PER_1000KG_VOL
     )
 
+    # Nutrition buff: if the user hit yesterday's protein goal, today's first
+    # workout earns +5% XP. Consume the buff so subsequent workouts today don't
+    # get it.
+    today_date = datetime.now(timezone.utc).date()
+    if progress.nutrition_buff_date == today_date:
+        xp_gained = int(round(xp_gained * 1.05))
+        progress.nutrition_buff_date = None
+
     # Update streak — grace period: streak survives up to 2 rest days, resets on 3+
     # unless the user has streak freezes to spend. Each owned freeze covers one
     # extra missed day beyond the 2-day grace window.

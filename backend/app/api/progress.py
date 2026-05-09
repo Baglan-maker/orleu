@@ -44,6 +44,7 @@ def _build_progress_out(
         current_streak=progress.current_streak,
         longest_streak=progress.longest_streak,
         streak_freezes=progress.streak_freezes or 0,
+        nutrition_buff_date=progress.nutrition_buff_date,
         current_campaign_id=progress.current_campaign_id,
         current_chapter_id=progress.current_chapter_id,
         campaign_path=progress.campaign_path,

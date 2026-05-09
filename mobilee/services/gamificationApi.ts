@@ -18,6 +18,7 @@ export interface ProgressResponse {
   current_streak:           number;
   longest_streak:           number;
   streak_freezes:           number;
+  nutrition_buff_date:      string | null;  // ISO date when the +5% XP buff applies
   current_campaign_id:      string | null;
   current_chapter_id:       string | null;
   campaign_path:            string | null;
