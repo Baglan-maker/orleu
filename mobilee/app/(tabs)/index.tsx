@@ -57,6 +57,7 @@ export default function WorkoutScreen() {
   const [streak,        setStreak]        = useState(0);
   const [xp,            setXp]            = useState(0);
   const [level,         setLevel]         = useState(1);
+  const [totalWorkouts, setTotalWorkouts] = useState(0);
   const [activeMissions,   setActiveMissions]   = useState<UserMissionResponse[]>([]);
   const [completedMission, setCompletedMission] = useState<UserMissionResponse | null>(null);
   const [coachMsg,         setCoachMsg]         = useState<CoachMessageResponse | null>(null);
@@ -76,6 +77,7 @@ export default function WorkoutScreen() {
             setStreak(d.current_streak ?? 0);
             setXp(d.xp ?? 0);
             setLevel(d.level ?? 1);
+            setTotalWorkouts(d.total_sessions ?? 0);
             setActiveMissions(missionsRes.data.active);
             const firstUnread = coachRes?.data?.find(m => !m.is_read) ?? null;
             setCoachMsg(firstUnread);
@@ -260,6 +262,7 @@ export default function WorkoutScreen() {
               style={[s.avatarBtn, { backgroundColor: avatarTheme.color }]}
               onPress={() => router.push('/profile')}
               activeOpacity={0.8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={s.avatarInitial}>{initial}</Text>
             </TouchableOpacity>
@@ -433,6 +436,11 @@ export default function WorkoutScreen() {
         coins={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.coins : 0}
         campaignComplete={activeCelebration?.kind === 'chapter' ? activeCelebration.reward.campaign_complete : false}
         onClose={dismissCelebration}
+        themeId={(user?.avatar_theme_id ?? 0) as AvatarThemeId}
+        stage={stage}
+        totalWorkouts={totalWorkouts}
+        streak={streak}
+        level={level}
       />
 
       <MissionCompleteModal

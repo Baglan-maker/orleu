@@ -5,10 +5,13 @@
  * - "+N XP" and "+N coins" reward badges
  * - Special variant when the entire campaign is complete
  */
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Easing, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
-import { Colors, Fonts, Radius } from '../../constants/theme';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import { Colors, Fonts, Radius, type AvatarStage, type AvatarThemeId } from '../../constants/theme';
+import { ShareChapterCard, SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT } from '../share/ShareChapterCard';
 
 interface Props {
   visible:           boolean;
@@ -17,6 +20,14 @@ interface Props {
   coins:             number;
   campaignComplete?: boolean;
   onClose:           () => void;
+  // Share-card payload — when supplied, surfaces a "Поделиться" button
+  // that renders an off-screen 1080×1920 PNG and opens the native share sheet.
+  themeId?:          AvatarThemeId;
+  stage?:            AvatarStage;
+  chapterTitle?:     string;
+  totalWorkouts?:    number;
+  streak?:           number;
+  level?:            number;
 }
 
 function IBookOpen() {
@@ -53,6 +64,17 @@ function ICoin() {
       stroke={Colors.flat} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <Circle cx="12" cy="12" r="10"/>
       <Polyline points="12 6 12 12 16 14"/>
+    </Svg>
+  );
+}
+
+function IShare() {
+  return (
+    <Svg width={15} height={15} viewBox="0 0 24 24" fill="none"
+      stroke={Colors.bone} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+      <Polyline points="16 6 12 2 8 6"/>
+      <Path d="M12 2v13"/>
     </Svg>
   );
 }
@@ -100,11 +122,56 @@ export function ChapterCompleteModal({
   coins,
   campaignComplete = false,
   onClose,
+  themeId,
+  stage,
+  chapterTitle,
+  totalWorkouts,
+  streak,
+  level,
 }: Props) {
   const cardScale  = useRef(new Animated.Value(0.65)).current;
   const overlayOp  = useRef(new Animated.Value(0)).current;
   const numberPop  = useRef(new Animated.Value(0)).current;
   const ringRotate = useRef(new Animated.Value(0)).current;
+
+  // ── Share state ─────────────────────────────────────────────────
+  // Off-screen card ref used by view-shot. Sharing is only available
+  // when the call site passes the share payload (themeId etc.).
+  const shareCardRef = useRef<View>(null);
+  const [sharing, setSharing] = useState(false);
+  const canShare =
+    themeId    !== undefined &&
+    stage      !== undefined &&
+    totalWorkouts !== undefined &&
+    streak     !== undefined &&
+    level      !== undefined;
+
+  async function handleShare() {
+    if (!canShare || sharing) return;
+    setSharing(true);
+    try {
+      const uri = await captureRef(shareCardRef, {
+        format: 'png',
+        quality: 1,
+        width:  SHARE_CARD_WIDTH,
+        height: SHARE_CARD_HEIGHT,
+      });
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing unavailable', 'Sharing is not supported on this device.');
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share your chapter',
+        UTI: 'public.png',
+      });
+    } catch (err) {
+      Alert.alert('Could not share', 'Try again in a moment.');
+    } finally {
+      setSharing(false);
+    }
+  }
 
   useEffect(() => {
     if (!visible) return;
@@ -203,10 +270,42 @@ export function ChapterCompleteModal({
             )}
           </View>
 
-          <TouchableOpacity style={s.btn} onPress={onClose} activeOpacity={0.85}>
-            <Text style={s.btnText}>{isFinal ? 'Begin Next Saga' : 'Continue'}</Text>
-          </TouchableOpacity>
+          <View style={s.actionsRow}>
+            {canShare && (
+              <TouchableOpacity
+                style={[s.shareBtn, sharing && s.shareBtnDisabled]}
+                onPress={handleShare}
+                activeOpacity={0.85}
+                disabled={sharing}
+              >
+                <IShare/>
+                <Text style={s.shareBtnText}>{sharing ? 'Preparing…' : 'Share'}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[s.btn, canShare && { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
+              <Text style={s.btnText}>{isFinal ? 'Begin Next Saga' : 'Continue'}</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
+
+        {/* Off-screen share card — captured to PNG when "Share" is tapped.
+            Mounted only while the modal is up so the tree doesn't carry it
+            indefinitely; collapsable={false} keeps view-shot happy on Android. */}
+        {canShare && visible && (
+          <View pointerEvents="none" style={s.offscreen}>
+            <ShareChapterCard
+              ref={shareCardRef}
+              themeId={themeId!}
+              stage={stage!}
+              chapterNumber={chapterNumber}
+              chapterTitle={chapterTitle}
+              campaignComplete={isFinal}
+              totalWorkouts={totalWorkouts!}
+              streak={streak!}
+              level={level!}
+            />
+          </View>
+        )}
       </Animated.View>
     </Modal>
   );
@@ -217,7 +316,7 @@ const RING_SIZE = 130;
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8,8,9,0.9)',
+    backgroundColor: Colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -333,11 +432,48 @@ const s = StyleSheet.create({
     borderRadius: Radius.md,
     paddingVertical: 14,
     paddingHorizontal: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   btnText: {
     fontSize: 15,
     fontFamily: Fonts.bold,
     color: '#fff',
     letterSpacing: 0.3,
+  },
+
+  // Share button + actions row
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+    width: '100%',
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.s3,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    borderRadius: Radius.md,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
+  shareBtnDisabled: { opacity: 0.6 },
+  shareBtnText: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: Colors.bone,
+    letterSpacing: 0.3,
+  },
+
+  // Off-screen positioning for the share card. Pulled far off the visible
+  // viewport — view-shot can still capture; the user never sees it.
+  offscreen: {
+    position: 'absolute',
+    left:   -10000,
+    top:    -10000,
+    opacity: 0,
   },
 });

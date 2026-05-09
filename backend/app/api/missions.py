@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 from uuid import UUID
+import random
 from datetime import datetime, timezone, timedelta
 
 from app.db.database import get_db
@@ -16,6 +17,23 @@ from app.services.dependencies import get_current_user
 from app.api.workouts import MISSION_TYPE_CATEGORY
 
 router = APIRouter()
+
+# Reroll config — once per 7 days, fixed coin cost.
+# Kept here (not in DB) because tuning shouldn't require a migration; bump if
+# economy changes. The cost intentionally stings a little so reroll feels like
+# a real choice, not a free re-spin until you like the offer.
+REROLL_COST_COINS = 30
+REROLL_COOLDOWN_DAYS = 7
+
+
+def _reroll_status(progress: UserProgress | None, now: datetime) -> tuple[bool, datetime | None]:
+    """Return (available, next_available_at)."""
+    if progress is None or progress.last_mission_reroll_at is None:
+        return True, None
+    next_at = progress.last_mission_reroll_at + timedelta(days=REROLL_COOLDOWN_DAYS)
+    if now >= next_at:
+        return True, None
+    return False, next_at
 
 
 def _to_user_mission_out(um: UserMission) -> UserMissionOut:
@@ -74,8 +92,21 @@ def get_missions(
         .all()
     )
 
+    # Recently expired (last 7 days) — surfaced once to the user, then dismissed client-side
+    expired = (
+        db.query(UserMission)
+        .options(joinedload(UserMission.template))
+        .filter(
+            UserMission.user_id == current_user.id,
+            UserMission.status == "expired",
+            UserMission.expires_at > now - timedelta(days=7),
+        )
+        .all()
+    )
+
     active_out = [_to_user_mission_out(m) for m in active]
     completed_out = [_to_user_mission_out(m) for m in completed]
+    expired_out = [_to_user_mission_out(m) for m in expired]
 
     # Available templates (exclude ones the user already has active)
     active_template_ids = {m.mission_template_id for m in active}
@@ -113,11 +144,17 @@ def get_missions(
         available.sort(key=lambda m: m.base_xp)                 # easiest first
     # plateau → leave default order (no nudge in either direction)
 
+    reroll_available, next_reroll_at = _reroll_status(progress, now)
+
     return AvailableMissionsOut(
         active=active_out,
         completed=completed_out,
+        expired=expired_out,
         available=available,
         trend=trend,
+        reroll_available=reroll_available,
+        reroll_cost=REROLL_COST_COINS,
+        next_reroll_at=next_reroll_at,
     )
 
 
@@ -213,3 +250,125 @@ def accept_mission(
         .first()
     )
     return _to_user_mission_out(mission)
+
+
+@router.post("/{user_mission_id}/reroll", response_model=UserMissionOut, status_code=200)
+def reroll_mission(
+    user_mission_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replace one active mission with a randomly-picked different template.
+
+    Rate-limited to once per `REROLL_COOLDOWN_DAYS` and costs `REROLL_COST_COINS`.
+    Intended for cases where the assigned mission is physically unfeasible
+    (injury, equipment access, etc.) — not a free re-roll until you like the offer.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Lock the progress row to serialize coin debit + reroll-timestamp update
+    progress = (
+        db.query(UserProgress)
+        .filter(UserProgress.user_id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+    if progress is None:
+        raise HTTPException(status_code=404, detail="User progress not found")
+
+    # Cooldown gate
+    available, next_at = _reroll_status(progress, now)
+    if not available:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Reroll on cooldown. Next available at {next_at.isoformat() if next_at else 'unknown'}.",
+        )
+
+    # Coin gate
+    if progress.coins < REROLL_COST_COINS:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Not enough coins. Reroll costs {REROLL_COST_COINS}, you have {progress.coins}.",
+        )
+
+    # Find the mission to reroll — must be active and owned by the user
+    target = (
+        db.query(UserMission)
+        .options(joinedload(UserMission.template))
+        .filter(
+            UserMission.id == user_mission_id,
+            UserMission.user_id == current_user.id,
+            UserMission.status == "active",
+            UserMission.expires_at > now,
+        )
+        .first()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Active mission not found")
+
+    # Pool of replacement templates: respect path filter, exclude the current
+    # template (no point swapping to the same one) and any other actives.
+    other_active_ids = {
+        m.mission_template_id
+        for m in db.query(UserMission)
+        .filter(
+            UserMission.user_id == current_user.id,
+            UserMission.status == "active",
+            UserMission.expires_at > now,
+            UserMission.id != target.id,
+        )
+        .all()
+    }
+    user_path = progress.campaign_path
+
+    candidates: list[MissionTemplate] = []
+    for t in db.query(MissionTemplate).all():
+        if t.id == target.mission_template_id:
+            continue
+        if t.id in other_active_ids:
+            continue
+        if t.campaign_path_filter:
+            if not user_path or t.campaign_path_filter != user_path:
+                continue
+        candidates.append(t)
+
+    if not candidates:
+        raise HTTPException(status_code=409, detail="No alternative missions available to reroll into.")
+
+    new_template = random.choice(candidates)
+
+    # Mark the old mission as rerolled so progress history is preserved
+    target.status = "rerolled"
+
+    # Scale target same way as accept
+    capped_level = min(progress.level, 50)
+    raw_target = new_template.base_target * (
+        new_template.difficulty_scale ** max(0, capped_level - 1)
+    )
+    max_target = new_template.base_target * 5.0
+    adjusted_target = min(raw_target, max_target)
+
+    new_mission = UserMission(
+        user_id=current_user.id,
+        mission_template_id=new_template.id,
+        adjusted_target=round(adjusted_target, 1),
+        current_progress=0.0,
+        status="active",
+        expires_at=now + timedelta(days=new_template.duration_days),
+    )
+    db.add(new_mission)
+
+    # Charge coins + start the cooldown
+    progress.coins -= REROLL_COST_COINS
+    progress.last_mission_reroll_at = now
+
+    db.commit()
+    db.refresh(new_mission)
+
+    new_mission = (
+        db.query(UserMission)
+        .options(joinedload(UserMission.template))
+        .filter(UserMission.id == new_mission.id)
+        .first()
+    )
+    return _to_user_mission_out(new_mission)

@@ -397,7 +397,11 @@ export default function WorkoutDetailScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={s.backBtn}
+          onPress={() => router.back()}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <IBack/>
         </TouchableOpacity>
 
@@ -519,7 +523,7 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   lbl: {
-    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 1.8,
+    fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1.5,
     color: Colors.t3, textTransform: 'uppercase',
   },
   pageTitle: {
@@ -707,7 +711,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.s3,
   },
   setColHdr: {
-    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 1,
+    fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1,
     color: Colors.t3, textTransform: 'uppercase', textAlign: 'center',
   },
   setTableRow: {

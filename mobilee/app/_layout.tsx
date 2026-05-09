@@ -33,9 +33,11 @@ import {
 } from '@expo-google-fonts/jetbrains-mono';
 
 import { useAuthStore }         from '../store/authStore';
+import { useRestTimerStore }    from '../store/restTimerStore';
 import { syncExerciseLibrary }  from '../services/exerciseSync';
 import { syncPendingWorkouts }  from '../services/syncWorker';
 import { Colors }               from '../constants/theme';
+import { RestTimerOverlay }     from '../components/workout/RestTimerOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,6 +62,17 @@ export default function RootLayout() {
   useEffect(() => {
     init();
   }, []);
+
+  // Single global tick for the rest timer — driven here so the countdown
+  // keeps running no matter which screen is mounted. Reads `running` from
+  // the store and starts/stops the interval reactively.
+  const restRunning = useRestTimerStore(s => s.running);
+  const restTick    = useRestTimerStore(s => s.tick);
+  useEffect(() => {
+    if (!restRunning) return;
+    const id = setInterval(restTick, 1000);
+    return () => clearInterval(id);
+  }, [restRunning, restTick]);
 
   // Скрываем splash когда шрифты + auth готовы
   useEffect(() => {
@@ -129,6 +142,8 @@ export default function RootLayout() {
         <Stack.Screen name="profile"       options={{ animation: 'slide_from_right' }}/>
         <Stack.Screen name="workout/[id]"  options={{ animation: 'slide_from_right' }}/>
       </Stack>
+      {/* Floating rest-timer pill — visible on every screen while a rest is running */}
+      <RestTimerOverlay/>
     </View>
   );
 }

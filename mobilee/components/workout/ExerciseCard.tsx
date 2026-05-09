@@ -356,7 +356,7 @@ export function ExerciseCard({
                   <TouchableOpacity
                     style={s.removeSetBtn}
                     onPress={() => removeSet(i)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
                   >
                     <IClose/>
                   </TouchableOpacity>

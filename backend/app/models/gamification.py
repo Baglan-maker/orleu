@@ -54,6 +54,7 @@ class UserProgress(Base):
     campaign_started_workouts = Column(Integer, default=0, nullable=False)
     campaign_started_missions = Column(Integer, default=0, nullable=False)
     last_workout_at          = Column(DateTime(timezone=True), nullable=True)
+    last_mission_reroll_at   = Column(DateTime(timezone=True), nullable=True)
     updated_at               = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user             = relationship("User",            back_populates="progress")
