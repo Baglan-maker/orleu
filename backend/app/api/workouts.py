@@ -75,6 +75,8 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     )
 
     # Update streak — grace period: streak survives up to 2 rest days, resets on 3+
+    # unless the user has streak freezes to spend. Each owned freeze covers one
+    # extra missed day beyond the 2-day grace window.
     now = datetime.now(timezone.utc)
     if progress.last_workout_at:
         days_gap = (now.date() - progress.last_workout_at.date()).days
@@ -83,7 +85,15 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
         elif days_gap <= 2:
             progress.current_streak = (progress.current_streak or 0) + 1  # within grace period — keep streak
         else:
-            progress.current_streak = 1  # gap >= 3 days — reset
+            extra_days = days_gap - 2  # days beyond the natural 2-day grace
+            owned = progress.streak_freezes or 0
+            if owned >= extra_days:
+                progress.streak_freezes = owned - extra_days
+                progress.current_streak = (progress.current_streak or 0) + 1
+            else:
+                # Not enough freezes — burn what we have and reset.
+                progress.streak_freezes = 0
+                progress.current_streak = 1
     else:
         progress.current_streak = 1
 

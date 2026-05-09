@@ -25,6 +25,7 @@ import { WorkoutHeatmap }  from '../../components/profile/WorkoutHeatmap';
 import {
   MuscleDistribution, buildMuscleData, type MuscleItem,
 } from '../../components/profile/MuscleDistribution';
+import { StreakFreezeModal } from '../../components/modals/StreakFreezeModal';
 
 // ─── SVG Icons (stroke-only) ─────────────────────────────────────
 function IGear() {
@@ -72,6 +73,21 @@ function ICoin({ size = 14, color = Colors.bone }: { size?: number; color?: stri
     </Svg>
   );
 }
+function ISnowflake({ size = 14, color = '#7BC4E8' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 2v20" />
+      <Path d="M3.5 7l17 10" />
+      <Path d="M3.5 17l17-10" />
+      <Path d="M9 4l3 3 3-3" />
+      <Path d="M9 20l3-3 3 3" />
+      <Path d="M2 9l3 3-3 3" />
+      <Path d="M22 9l-3 3 3 3" />
+    </Svg>
+  );
+}
+
 function ITrophy({ color = Colors.bone }: { color?: string }) {
   return (
     <Svg width={16} height={16} viewBox="0 0 24 24" fill="none"
@@ -148,15 +164,28 @@ function fmtBarVol(v: number): string {
 
 // ─── Sub-components ───────────────────────────────────────────────
 
-function StatPill({ icon, value, label, color }: {
+function StatPill({ icon, value, label, color, onPress, badge }: {
   icon: React.ReactNode; value: number | string; label: string; color: string;
+  onPress?: () => void;
+  badge?: number;
 }) {
-  return (
+  const inner = (
     <View style={s.pill}>
       {icon}
       <Text style={[s.pillValue, { color }]}>{value}</Text>
       <Text style={s.pillLabel}>{label}</Text>
+      {badge != null && badge > 0 && (
+        <View style={s.pillBadge}>
+          <Text style={s.pillBadgeText}>+{badge}</Text>
+        </View>
+      )}
     </View>
+  );
+  if (!onPress) return inner;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      {inner}
+    </TouchableOpacity>
   );
 }
 
@@ -197,6 +226,7 @@ export default function ProfileScreen() {
   const [loading,        setLoading]        = useState(true);
   const [fetchError,     setFetchError]     = useState<string | null>(null);
   const [xpInfoOpen,     setXpInfoOpen]     = useState(false);
+  const [freezeOpen,     setFreezeOpen]     = useState(false);
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
 
@@ -299,6 +329,7 @@ export default function ProfileScreen() {
   const streak   = progress?.current_streak ?? 0;
   const longest  = progress?.longest_streak ?? 0;
   const coins    = progress?.coins ?? 0;
+  const freezes  = progress?.streak_freezes ?? 0;
 
   const isMaxLevel = level >= 5;
   const xpNext   = xpForLevel(level); // 0 when max level
@@ -413,7 +444,7 @@ export default function ProfileScreen() {
         {/* ── Stat Pills ── */}
         <View style={s.pillRow}>
           <StatPill icon={<IStar size={14} color={Colors.t1} />}       value={level}          label="Level"    color={Colors.t1} />
-          <StatPill icon={<IFire size={14} />}                          value={streak}         label="Streak"   color={Colors.cr} />
+          <StatPill icon={<IFire size={14} />}                          value={streak}         label="Streak"   color={Colors.cr} onPress={() => setFreezeOpen(true)} badge={freezes} />
           <StatPill icon={<IDumbbell size={14} color={Colors.t2} />}    value={totalWorkouts}  label="Sessions" color={Colors.t1} />
           <StatPill icon={<ICoin size={14} />}                          value={coins}          label="Coins"    color={Colors.bone} />
         </View>
@@ -476,6 +507,15 @@ export default function ProfileScreen() {
               <IFire size={18} />
               <Text style={s.cardTitle}>Streak</Text>
             </View>
+            <TouchableOpacity
+              style={s.freezeChip}
+              activeOpacity={0.7}
+              onPress={() => setFreezeOpen(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <ISnowflake size={13} />
+              <Text style={s.freezeChipText}>{freezes}/2</Text>
+            </TouchableOpacity>
           </View>
           <View style={s.streakRow}>
             {streakWeek.map((d, i) => (
@@ -494,7 +534,9 @@ export default function ProfileScreen() {
             </View>
           </View>
           <Text style={s.streakHint}>
-            Work out every day to keep your streak. Missing a day resets it.
+            Work out every day to keep your streak.
+            {'\n'}
+            Tap the <Text style={s.streakHintEmph}>❄ snowflake</Text> above to buy a Streak Freeze and skip a day without losing it.
           </Text>
         </TouchableOpacity>
 
@@ -639,6 +681,14 @@ export default function ProfileScreen() {
         <View style={{ height: 20 }} />
 
       </ScrollView>
+
+      <StreakFreezeModal
+        visible={freezeOpen}
+        onClose={() => setFreezeOpen(false)}
+        coins={coins}
+        owned={freezes}
+        onPurchase={(next) => setProgress(next)}
+      />
     </SafeAreaView>
   );
 }
@@ -749,6 +799,7 @@ const s = StyleSheet.create({
     borderColor: Colors.line,
     paddingVertical: 12,
     gap: 4,
+    position: 'relative',
   },
   pillValue: {
     fontSize: 20,
@@ -761,6 +812,21 @@ const s = StyleSheet.create({
     letterSpacing: 0.8,
     color: Colors.t3,
     textTransform: 'uppercase',
+  },
+  pillBadge: {
+    position: 'absolute',
+    top: 4, right: 4,
+    backgroundColor: '#7BC4E8',
+    borderRadius: Radius.full,
+    paddingHorizontal: 5, paddingVertical: 1,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  pillBadgeText: {
+    fontSize: 9,
+    fontFamily: Fonts.bold,
+    color: Colors.s1,
+    letterSpacing: 0.5,
   },
 
   // ── Cards (generic) ──
@@ -1051,6 +1117,29 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.md,
     lineHeight: 16,
+  },
+  streakHintEmph: {
+    color: '#7BC4E8',
+    fontFamily: Fonts.bold,
+  },
+
+  // Streak Freeze inventory chip in the streak card header
+  freezeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(123,196,232,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(123,196,232,0.35)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  freezeChipText: {
+    fontSize: 12,
+    fontFamily: Fonts.monoBold,
+    color: '#7BC4E8',
+    letterSpacing: 0.3,
   },
 
   // XP info — toggle button + expandable panel

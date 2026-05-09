@@ -46,6 +46,7 @@ class UserProgress(Base):
     coins               = Column(Integer, default=0)
     current_streak      = Column(Integer, default=0)
     longest_streak      = Column(Integer, default=0)
+    streak_freezes      = Column(Integer, default=0, nullable=False)
     current_campaign_id      = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True)
     current_chapter_id       = Column(UUID(as_uuid=True), ForeignKey("campaign_chapters.id"), nullable=True)
     campaign_path            = Column(String(1), nullable=True)

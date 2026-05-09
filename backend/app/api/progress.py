@@ -14,6 +14,10 @@ from app.services.gamification_service import try_advance_chapter
 
 router = APIRouter()
 
+# Streak Freeze economy — Duolingo-style protection that absorbs one missed day.
+STREAK_FREEZE_COST_COINS = 50
+STREAK_FREEZE_MAX_OWNED  = 2
+
 # Avatar stage is derived from player level.
 # Single source of truth — XP thresholds in workouts.py drive both level and stage.
 # level 1 → stage 0 (Rookie), level 5 → stage 4 (Legend)
@@ -39,6 +43,7 @@ def _build_progress_out(
         coins=progress.coins,
         current_streak=progress.current_streak,
         longest_streak=progress.longest_streak,
+        streak_freezes=progress.streak_freezes or 0,
         current_campaign_id=progress.current_campaign_id,
         current_chapter_id=progress.current_chapter_id,
         campaign_path=progress.campaign_path,
@@ -191,6 +196,58 @@ def patch_progress(
     if body.campaign_path is not None:
         try_advance_chapter(current_user.id, db)
         db.refresh(progress)
+
+    total_sessions = db.query(Workout).filter(Workout.user_id == current_user.id).count()
+    earned_map = {
+        row.achievement_id: row.earned_at
+        for row in db.query(UserAchievement)
+        .filter(UserAchievement.user_id == current_user.id)
+        .all()
+    }
+    achievements = [
+        AchievementOut(
+            id=a.id, name=a.name, icon_key=a.icon_key,
+            earned=a.id in earned_map, earned_at=earned_map.get(a.id),
+        )
+        for a in db.query(Achievement).all()
+    ]
+    return _build_progress_out(progress, total_sessions, achievements)
+
+
+@router.post("/buy-streak-freeze", response_model=ProgressOut)
+def buy_streak_freeze(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Purchase one streak freeze for STREAK_FREEZE_COST_COINS coins.
+    Capped at STREAK_FREEZE_MAX_OWNED in the user's inventory.
+    """
+    progress = (
+        db.query(UserProgress)
+        .filter(UserProgress.user_id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+    if not progress:
+        raise HTTPException(status_code=404, detail="Progress not found")
+
+    owned = progress.streak_freezes or 0
+    if owned >= STREAK_FREEZE_MAX_OWNED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Inventory is full ({STREAK_FREEZE_MAX_OWNED} max)",
+        )
+    if (progress.coins or 0) < STREAK_FREEZE_COST_COINS:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Not enough coins (need {STREAK_FREEZE_COST_COINS})",
+        )
+
+    progress.coins = (progress.coins or 0) - STREAK_FREEZE_COST_COINS
+    progress.streak_freezes = owned + 1
+    db.commit()
+    db.refresh(progress)
 
     total_sessions = db.query(Workout).filter(Workout.user_id == current_user.id).count()
     earned_map = {

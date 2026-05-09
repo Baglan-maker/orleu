@@ -10,8 +10,14 @@ import { useFocusEffect } from 'expo-router';
 import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../constants/theme';
-import { progressApi, type ProgressResponse } from '../services/gamificationApi';
+import {
+  progressApi,
+  STREAK_FREEZE_COST_COINS,
+  STREAK_FREEZE_MAX_OWNED,
+  type ProgressResponse,
+} from '../services/gamificationApi';
 import { workoutApi, type WorkoutListItem } from '../services/workoutApi';
+import { StreakFreezeModal } from '../components/modals/StreakFreezeModal';
 
 // ─── Chest milestone definitions ─────────────────────────────────
 interface ChestMilestone {
@@ -46,6 +52,21 @@ function IFire({ size = 14, color = Colors.cr }: { size?: number; color?: string
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
       stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M12 12c2-2.96 0-7-1-8 0 3.038-1.773 4.741-3 6-1.226 1.26-2 3.24-2 5a6 6 0 1 0 12 0c0-1.532-1.056-3.94-2-5-1.786 3-2.791 3-4 2z" />
+    </Svg>
+  );
+}
+
+function ISnowflake({ size = 28, color = '#7BC4E8' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 2v20" />
+      <Path d="M3.5 7l17 10" />
+      <Path d="M3.5 17l17-10" />
+      <Path d="M9 4l3 3 3-3" />
+      <Path d="M9 20l3-3 3 3" />
+      <Path d="M2 9l3 3-3 3" />
+      <Path d="M22 9l-3 3 3 3" />
     </Svg>
   );
 }
@@ -123,6 +144,7 @@ export default function StreaksScreen() {
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [freezeOpen, setFreezeOpen] = useState(false);
 
   // Chest open animation
   const [openedChest, setOpenedChest] = useState<ChestMilestone | null>(null);
@@ -133,19 +155,26 @@ export default function StreaksScreen() {
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        try {
-          const [progRes, histRes] = await Promise.all([
-            progressApi.get(),
-            workoutApi.getHistory(200),
-          ]);
-          if (cancelled) return;
-          setProgress(progRes.data);
-          setWorkoutHistory((histRes.data as { items: WorkoutListItem[] }).items ?? []);
-        } catch {
-          // keep defaults
-        } finally {
-          if (!cancelled) setLoading(false);
+        // allSettled so one failed endpoint doesn't blank out the whole screen.
+        const [progRes, histRes] = await Promise.allSettled([
+          progressApi.get(),
+          workoutApi.getHistory(200),
+        ]);
+        if (cancelled) return;
+
+        if (progRes.status === 'fulfilled') {
+          setProgress(progRes.value.data);
+        } else {
+          console.warn('[streaks] /api/progress failed:', progRes.reason);
         }
+
+        if (histRes.status === 'fulfilled') {
+          setWorkoutHistory((histRes.value.data as { items: WorkoutListItem[] }).items ?? []);
+        } else {
+          console.warn('[streaks] /api/workouts failed:', histRes.reason);
+        }
+
+        setLoading(false);
       })();
       return () => { cancelled = true; };
     }, []),
@@ -153,6 +182,8 @@ export default function StreaksScreen() {
 
   const streak = progress?.current_streak ?? 0;
   const longest = progress?.longest_streak ?? 0;
+  const freezes = progress?.streak_freezes ?? 0;
+  const coins = progress?.coins ?? 0;
 
   const workoutDates = useMemo(() => {
     return new Set(workoutHistory.map(w => w.workout_date));
@@ -240,6 +271,36 @@ export default function StreaksScreen() {
               <Text style={st.heroStatLabel}>To Next Chest</Text>
             </View>
           </View>
+        </View>
+
+        {/* ── Streak Freeze ── */}
+        <View style={st.section}>
+          <Text style={st.sectionTitle}>Streak Freeze</Text>
+          <TouchableOpacity
+            style={st.freezeCard}
+            activeOpacity={0.85}
+            onPress={() => setFreezeOpen(true)}
+          >
+            <View style={st.freezeIcon}>
+              <ISnowflake size={28} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={st.freezeTitle}>
+                {freezes > 0
+                  ? `${freezes} freeze${freezes === 1 ? '' : 's'} ready`
+                  : 'Protect your streak'}
+              </Text>
+              <Text style={st.freezeSub}>
+                {freezes >= STREAK_FREEZE_MAX_OWNED
+                  ? `Inventory full · ${STREAK_FREEZE_MAX_OWNED}/${STREAK_FREEZE_MAX_OWNED}`
+                  : `Skip a day without losing your streak · ${STREAK_FREEZE_COST_COINS} coins each`}
+              </Text>
+            </View>
+            <View style={st.freezeCount}>
+              <Text style={st.freezeCountVal}>{freezes}</Text>
+              <Text style={st.freezeCountMax}>/{STREAK_FREEZE_MAX_OWNED}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* ── Season Rewards (Chests) ── */}
@@ -355,6 +416,14 @@ export default function StreaksScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <StreakFreezeModal
+        visible={freezeOpen}
+        onClose={() => setFreezeOpen(false)}
+        coins={coins}
+        owned={freezes}
+        onPurchase={(next) => setProgress(next)}
+      />
 
       {/* ── Chest Open Overlay ── */}
       {openedChest && (
@@ -585,6 +654,55 @@ const st = StyleSheet.create({
     fontFamily: Fonts.mono,
     color: Colors.t3,
     marginBottom: Spacing.md,
+  },
+
+  // Streak Freeze card
+  freezeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: 'rgba(123,196,232,0.08)',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(123,196,232,0.30)',
+    padding: Spacing.lg,
+  },
+  freezeIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: 'rgba(123,196,232,0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(123,196,232,0.40)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freezeTitle: {
+    fontSize: 15,
+    fontFamily: Fonts.bold,
+    color: Colors.t1,
+    marginBottom: 3,
+  },
+  freezeSub: {
+    fontSize: 11,
+    fontFamily: Fonts.regular,
+    color: Colors.t2,
+    lineHeight: 15,
+  },
+  freezeCount: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  freezeCountVal: {
+    fontSize: 24,
+    fontFamily: Fonts.monoBold,
+    color: '#7BC4E8',
+    lineHeight: 28,
+  },
+  freezeCountMax: {
+    fontSize: 13,
+    fontFamily: Fonts.mono,
+    color: Colors.t3,
   },
 
   // Track

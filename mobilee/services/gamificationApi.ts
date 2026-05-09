@@ -17,6 +17,7 @@ export interface ProgressResponse {
   coins:                    number;
   current_streak:           number;
   longest_streak:           number;
+  streak_freezes:           number;
   current_campaign_id:      string | null;
   current_chapter_id:       string | null;
   campaign_path:            string | null;
@@ -145,6 +146,10 @@ export interface CoachMessageResponse {
 }
 
 // ─── API ────────────────────────────────────────────────────────
+// Keep these in sync with backend constants in api/progress.py
+export const STREAK_FREEZE_COST_COINS = 50;
+export const STREAK_FREEZE_MAX_OWNED  = 2;
+
 export const progressApi = {
   get: () =>
     api.get<ProgressResponse>('/api/progress'),
@@ -155,6 +160,9 @@ export const progressApi = {
     current_chapter_id?: string;
   }) =>
     api.patch<ProgressResponse>('/api/progress', data),
+
+  buyStreakFreeze: () =>
+    api.post<ProgressResponse>('/api/progress/buy-streak-freeze'),
 };
 
 export const campaignApi = {

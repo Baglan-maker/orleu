@@ -38,6 +38,7 @@ class ProgressOut(BaseModel):
     coins:                   int
     current_streak:          int
     longest_streak:          int
+    streak_freezes:          int = 0
     current_campaign_id:     Optional[UUID] = None
     current_chapter_id:      Optional[UUID] = None
     campaign_path:           Optional[str] = None
