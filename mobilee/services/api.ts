@@ -19,12 +19,12 @@ import {
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
 const BASE_URL = __DEV__
-  ? 'http://192.168.0.103:8080'   // ← замени на свой IP
+  ? 'http://192.168.0.101:8080'   // ← замени на свой IP
   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10_000,
+  timeout: 60_000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -164,4 +164,19 @@ export const authApi = {
     api.post('/api/auth/logout', { refresh_token: refreshToken }),
 
   me: () => api.get('/api/auth/me'),
+
+  updateMe: (data: {
+    name?: string;
+    primary_goal?: 'strength' | 'hypertrophy' | 'endurance';
+    experience_level?: 'beginner' | 'intermediate' | 'advanced';
+    avatar_theme_id?: number;
+  }) => api.patch('/api/auth/me', data),
+
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.post('/api/auth/change-password', data),
+
+  deleteMe: (data: { password: string }) =>
+    api.delete('/api/auth/me', { data }),
+
+  exportData: () => api.get('/api/auth/export'),
 };

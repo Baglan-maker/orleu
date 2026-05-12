@@ -183,7 +183,7 @@ function StatPill({ icon, value, label, color, onPress, badge }: {
   );
   if (!onPress) return inner;
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={{ flex: 1 }}>
       {inner}
     </TouchableOpacity>
   );
@@ -549,20 +549,20 @@ export default function ProfileScreen() {
             ))}
           </View>
           <View style={s.streakStats}>
-            <View style={s.streakStat}>
+            <View style={s.streakStatBox}>
+              <IFire size={14} color={Colors.cr} />
               <Text style={s.streakStatVal}>{streak}</Text>
               <Text style={s.streakStatLabel}>Current</Text>
             </View>
-            <View style={s.streakDivider} />
-            <View style={s.streakStat}>
-              <Text style={s.streakStatVal}>{longest}</Text>
+            <View style={s.streakStatBox}>
+              <ITrophy color={Colors.bone} />
+              <Text style={[s.streakStatVal, { color: Colors.bone }]}>{longest}</Text>
               <Text style={s.streakStatLabel}>Best</Text>
             </View>
           </View>
           <Text style={s.streakHint}>
-            Work out every day to keep your streak.
-            {'\n'}
-            Tap the <Text style={s.streakHintEmph}>❄ snowflake</Text> above to buy a Streak Freeze and skip a day without losing it.
+            Train at least every 2 days to keep your streak — missing 3+ days resets it.{'\n'}
+            <Text style={s.streakHintEmph}>❄ Streak Freeze</Text> protects you for one extra missed day beyond the 2-day grace period.
           </Text>
         </TouchableOpacity>
 
@@ -977,9 +977,18 @@ const s = StyleSheet.create({
   },
   streakStats: {
     flexDirection: 'row',
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  streakStatBox: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 24,
+    backgroundColor: Colors.s3,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.line,
+    paddingVertical: 10,
+    gap: 3,
   },
   streakStat: { alignItems: 'center' },
   streakStatVal: {
