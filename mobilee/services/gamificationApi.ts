@@ -90,6 +90,7 @@ export interface MissionTemplateResponse {
   type:                 string;
   description_template: string;
   base_target:          number;
+  preview_target:       number;  // experience-scaled at level 1, set by server
   base_xp:              number;
   base_coins:           number;
   duration_days:        number;

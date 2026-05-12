@@ -132,6 +132,7 @@ class MissionTemplateOut(BaseModel):
     category:             str = ""  # Doc §5 category: volume, consistency, intensity, variety
     description_template: str
     base_target:          float
+    preview_target:       float = 0.0  # experience-scaled target at level 1, set by get_missions
     base_xp:              int
     base_coins:           int
     duration_days:        int

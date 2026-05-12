@@ -1,11 +1,11 @@
 // mobile/services/workoutApi.ts
 /**
- * Все API вызовы для упражнений и тренировок.
- * Каждая функция соответствует одному endpoint на бэкенде.
+ * All API calls for exercises and workouts.
+ * Each function corresponds to one endpoint on the backend.
  */
 import { api } from './api';
 
-// ─── Типы (ответы от сервера) ─────────────────────────────────────
+// ─── Types (server responses) ─────────────────────────────────────
 export interface ExerciseResponse {
   id:           string;
   name:         string;

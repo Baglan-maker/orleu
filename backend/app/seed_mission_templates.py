@@ -96,6 +96,31 @@ TEMPLATES = [
         "duration_days": 7,
         "campaign_path_filter": "B",
     },
+    # ── Additional endurance/variety missions ──
+    # "Movement Variety" fills the gap for path-A users who chose endurance:
+    # Exercise Explorer is path-B locked, leaving them with zero variety missions.
+    {
+        "name": "Movement Variety",
+        "type": "unique_exercises",
+        "description_template": "Use {target} different exercises this week",
+        "base_target": 8,
+        "difficulty_scale": 1.0,
+        "base_xp": 110,
+        "base_coins": 22,
+        "duration_days": 7,
+    },
+    # "Endurance Block" bridges the gap between Comeback (1 session) and
+    # Weekly Warrior (4 sessions/7 days) for endurance-goal users.
+    {
+        "name": "Endurance Block",
+        "type": "workout_count",
+        "description_template": "Complete {target} training sessions over 2 weeks",
+        "base_target": 3,
+        "difficulty_scale": 1.0,
+        "base_xp": 95,
+        "base_coins": 18,
+        "duration_days": 14,
+    },
 ]
 
 

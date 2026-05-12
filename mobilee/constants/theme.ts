@@ -3,27 +3,27 @@
 export const Colors = {
     // ── Surfaces ──────────────────────────────────────────────────
     void:  '#080809',
-    s1:    '#0F0F10',   // основной фон (экраны)
-    s2:    '#141415',   // карточки
-    s3:    '#1A1A1C',   // инпуты, строки упражнений
-    s4:    '#202022',   // иконки-боксы, stat boxes
-    s5:    '#282829',   // неактивные точки прогресса
-  
+    s1:    '#0F0F10',   // main background (screens)
+    s2:    '#141415',   // cards
+    s3:    '#1A1A1C',   // inputs, exercise rows
+    s4:    '#202022',   // icon boxes, stat boxes
+    s5:    '#282829',   // inactive progress dots
+
     // ── Accent — Deep Crimson ──────────────────────────────────────
     cr:     '#C8343A',
     crLo:   'rgba(200,52,58,0.09)',
     crMid:  'rgba(200,52,58,0.16)',
     crBdr:  'rgba(200,52,58,0.28)',
-  
+
     // ── Bone white ────────────────────────────────────────────────
     bone:    '#E8E0D4',
     boneLo:  'rgba(232,224,212,0.06)',
     boneMid: 'rgba(232,224,212,0.10)',
-  
+
     // ── Text ──────────────────────────────────────────────────────
-    t1: '#E8E0D4',   // primary   — всегда видимый
-    t2: '#7A7570',   // secondary — подписи, hints
-    t3: '#3E3C39',   // tertiary  — лейблы, placeholder
+    t1: '#E8E0D4',   // primary   — always visible
+    t2: '#7A7570',   // secondary — labels, hints
+    t3: '#3E3C39',   // tertiary  — captions, placeholder
   
     // ── Dividers ──────────────────────────────────────────────────
     line:  'rgba(255,255,255,0.055)',
@@ -83,12 +83,12 @@ export const Colors = {
     '3xl': 32,
   } as const;
   
-  // Типы аватаров — соответствуют THEMES в дизайне
+  // Avatar themes — correspond to THEMES in design
   export const AvatarThemes = [
-    { id: 0, name: 'Steel',  color: Colors.cr   },
-    { id: 1, name: 'Frost',  color: '#4A7FC1'   },
-    { id: 2, name: 'Forge',  color: '#B87C3A'   },
-    { id: 3, name: 'Shadow', color: '#7C5BB5'   },
+    { id: 0, name: 'Novice',  color: Colors.cr   },
+    { id: 1, name: 'Fencer',  color: '#4A7FC1'   },
+    { id: 2, name: 'Nomad',   color: '#B87C3A'   },
+    { id: 3, name: 'Archer',  color: '#7C5BB5'   },
   ] as const;
 
   export type AvatarThemeId = 0 | 1 | 2 | 3;
@@ -101,10 +101,10 @@ export const Colors = {
 
   // character roster — id maps to user.avatar_theme_id
   export const CHARACTERS = [
-    { id: 0, name: 'Ares'    },
-    { id: 1, name: 'Phantom' },
-    { id: 2, name: 'Titan'   },
-    { id: 3, name: 'Wraith'  },
+    { id: 0, name: 'Novice'    },
+    { id: 1, name: 'Fencer' },
+    { id: 2, name: 'Nomad'   },
+    { id: 3, name: 'Archer'  },
   ] as const;
 
   // XP required to advance from level `lvl` to the next.

@@ -23,6 +23,7 @@ import {
   CoachMessageResponse,
 } from '../../services/gamificationApi';
 import { getDismissedExpiries, addDismissedExpiry } from '../../services/storage';
+import { useAuthStore } from '../../store/authStore';
 
 // ─── Icons ────────────────────────────────────────────────────────
 function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
@@ -78,7 +79,15 @@ const FLAVOR_TEXT: Record<string, string> = {
   muscle_sets:      'Quality work, set after set.',
 };
 
+const EXP_LABEL: Record<string, string> = {
+  beginner:     'Beginner',
+  intermediate: 'Intermediate',
+  advanced:     'Advanced',
+};
+
 export default function MissionsScreen() {
+  const authUser = useAuthStore(s => s.user);
+
   const [activeMissions,    setActiveMissions]    = useState<UserMissionResponse[]>([]);
   const [completedMissions, setCompletedMissions] = useState<UserMissionResponse[]>([]);
   const [expiredMissions,   setExpiredMissions]   = useState<UserMissionResponse[]>([]);
@@ -477,7 +486,7 @@ export default function MissionsScreen() {
               const tc      = TYPE_COLOR[diff];
               const isOn    = selected.includes(t.id);
               const locked  = activeMissions.length >= 2;
-              const desc    = t.description_template.replace('{target}', String(Math.round(t.base_target)));
+              const desc    = t.description_template.replace('{target}', String(Math.round(t.preview_target ?? t.base_target)));
               const flavor  = FLAVOR_TEXT[t.type];
               // First mission carries the "Recommended" badge when ML reordered the list
               const isRecommended = idx === 0 && (trend === 'improving' || trend === 'declining');
@@ -518,7 +527,7 @@ export default function MissionsScreen() {
                   <Text style={s.mDesc}>{desc}</Text>
                   {flavor && <Text style={s.mFlavor}>{flavor}</Text>}
                   <View style={s.scaleRow}>
-                    <Text style={s.scaleText}>Scaled for Level {userLevel}</Text>
+                    <Text style={s.scaleText}>{EXP_LABEL[authUser?.experience_level ?? 'beginner']} · Lv {userLevel}</Text>
                   </View>
                   <View style={s.mFoot}>
                     <View style={s.xpRow}>

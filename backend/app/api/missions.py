@@ -25,6 +25,42 @@ router = APIRouter()
 REROLL_COST_COINS = 30
 REROLL_COOLDOWN_DAYS = 7
 
+# Experience-based target multiplier: scales mission targets so beginners don't
+# hit walls and advanced users aren't bored. Applied to base_target before the
+# level-progression difficulty_scale exponentiation.
+EXPERIENCE_MULTIPLIER: dict[str, float] = {
+    "beginner":     1.0,
+    "intermediate": 1.5,
+    "advanced":     2.5,
+}
+
+# Mission type affinity per primary_goal.
+# Lower rank = shown first in the available list.
+# Gives each goal a clear "personality" in mission selection without hiding missions.
+GOAL_TYPE_PRIORITY: dict[str, dict[str, int]] = {
+    "strength": {
+        "muscle_sets":      0,
+        "total_volume":     1,
+        "total_reps":       2,
+        "workout_count":    3,
+        "unique_exercises": 4,
+    },
+    "hypertrophy": {
+        "total_reps":       0,
+        "muscle_sets":      1,
+        "total_volume":     2,
+        "workout_count":    3,
+        "unique_exercises": 4,
+    },
+    "endurance": {
+        "workout_count":    0,
+        "unique_exercises": 1,
+        "total_reps":       2,
+        "total_volume":     3,
+        "muscle_sets":      4,
+    },
+}
+
 
 def _reroll_status(progress: UserProgress | None, now: datetime) -> tuple[bool, datetime | None]:
     """Return (available, next_available_at)."""
@@ -38,9 +74,8 @@ def _reroll_status(progress: UserProgress | None, now: datetime) -> tuple[bool, 
 
 def _to_user_mission_out(um: UserMission) -> UserMissionOut:
     tmpl = um.template
-    # Use base_target in the description text so it matches what was shown on the selection card.
-    # adjusted_target (level-scaled) is used only for progress math, not the display label.
-    desc = tmpl.description_template.replace("{target}", str(int(tmpl.base_target)))
+    # Use adjusted_target in description so the text matches the progress bar target.
+    desc = tmpl.description_template.replace("{target}", str(int(um.adjusted_target)))
     return UserMissionOut(
         id=um.id,
         mission_template_id=um.mission_template_id,
@@ -117,6 +152,10 @@ def get_missions(
     ).first()
     user_path = progress.campaign_path if progress else None
 
+    # Experience multiplier for the preview_target shown on selection cards.
+    # preview_target = what the user will face at their current experience level, level 1 baseline.
+    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
+
     available = []
     for t in all_templates:
         if t.id in active_template_ids:
@@ -127,10 +166,13 @@ def get_missions(
                 continue
         tmpl_out = MissionTemplateOut.model_validate(t)
         tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
+        tmpl_out.preview_target = round(t.base_target * exp_mult, 1)
         available.append(tmpl_out)
 
-    # ML-driven ordering: nudge users toward missions matching their current trend.
-    # base_xp is the difficulty proxy — designer-tuned reward per mission.
+    # ML-driven + goal-based ordering.
+    # Primary key: goal affinity (mission types that match primary_goal come first).
+    # Secondary key: ML trend nudge — improving users see harder missions first,
+    # declining users see easier missions first. Same-affinity, same-trend = neutral.
     latest_pred = (
         db.query(MlPrediction)
         .filter(MlPrediction.user_id == current_user.id)
@@ -138,11 +180,18 @@ def get_missions(
         .first()
     )
     trend = latest_pred.trend if latest_pred else None
-    if trend == "improving":
-        available.sort(key=lambda m: m.base_xp, reverse=True)   # hardest first
-    elif trend == "declining":
-        available.sort(key=lambda m: m.base_xp)                 # easiest first
-    # plateau → leave default order (no nudge in either direction)
+
+    type_priority = GOAL_TYPE_PRIORITY.get(current_user.primary_goal or "strength", {})
+    default_priority = len(type_priority)  # unrecognized types go last
+
+    def _sort_key(m: MissionTemplateOut) -> tuple:
+        # ML trend is primary: improving → hardest (highest XP) first; declining → easiest first
+        xp_rank = -m.base_xp if trend == "improving" else (m.base_xp if trend == "declining" else 0)
+        # Goal affinity is secondary tiebreaker within the same XP band
+        goal_rank = type_priority.get(m.type, default_priority)
+        return (xp_rank, goal_rank)
+
+    available.sort(key=_sort_key)
 
     reroll_available, next_reroll_at = _reroll_status(progress, now)
 
@@ -219,15 +268,19 @@ def accept_mission(
     if len(active_count) >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
-    # Scale target based on user level.
-    # Cap the multiplier at 5x base to prevent impossible targets at high levels.
+    # Scale target based on experience level + player level.
+    # Experience multiplier raises the baseline so advanced players face harder
+    # missions from day one, even at level 1. Level-based difficulty_scale then
+    # compounds on top as the player progresses.
+    # Cap at 5× the (experience-adjusted) base to prevent impossible targets.
     progress = db.query(UserProgress).filter(
         UserProgress.user_id == current_user.id
     ).first()
+    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
     level = progress.level if progress else 1
     capped_level = min(level, 50)
-    raw_target = template.base_target * (template.difficulty_scale ** max(0, capped_level - 1))
-    max_target = template.base_target * 5.0
+    raw_target = template.base_target * exp_mult * (template.difficulty_scale ** max(0, capped_level - 1))
+    max_target = template.base_target * exp_mult * 5.0
     adjusted_target = min(raw_target, max_target)
 
     mission = UserMission(
@@ -340,12 +393,13 @@ def reroll_mission(
     # Mark the old mission as rerolled so progress history is preserved
     target.status = "rerolled"
 
-    # Scale target same way as accept
+    # Scale target same way as accept (experience × level)
+    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
     capped_level = min(progress.level, 50)
-    raw_target = new_template.base_target * (
+    raw_target = new_template.base_target * exp_mult * (
         new_template.difficulty_scale ** max(0, capped_level - 1)
     )
-    max_target = new_template.base_target * 5.0
+    max_target = new_template.base_target * exp_mult * 5.0
     adjusted_target = min(raw_target, max_target)
 
     new_mission = UserMission(
