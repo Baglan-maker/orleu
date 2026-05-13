@@ -27,6 +27,7 @@ import {
   selectTotalVolume,
 } from '../../store/workoutStore';
 import { useAuthStore } from '../../store/authStore';
+import { useRestTimerStore } from '../../store/restTimerStore';
 import { progressApi, missionApi, coachApi, type UserMissionResponse, type CoachMessageResponse, type CoachTone } from '../../services/gamificationApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export default function WorkoutScreen() {
   } = useWorkoutStore();
 
   const [showWorkoutLog, setShowWorkoutLog] = useState(false);
+  const stopRestTimer = useRestTimerStore(s => s.skip);
 
   // Progress state — fetched from server on focus
   const [streak,        setStreak]        = useState(0);
@@ -187,6 +189,7 @@ export default function WorkoutScreen() {
     const missionsBefore = activeMissions;
     const result         = await submitWorkout();
     if (result) {
+      stopRestTimer();
       setShowWorkoutLog(false);
       const earned = result.achievements ?? [];
       const prs    = result.new_prs ?? [];
