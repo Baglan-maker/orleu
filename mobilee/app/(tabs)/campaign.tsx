@@ -20,9 +20,6 @@ import {
 } from '../../services/gamificationApi';
 
 // ─── Icons ───────────────────────────────────────────────────────
-function ICheck()    { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
-function IZap()      { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>; }
-function ILock()     { return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Rect x="3" y="11" width="18" height="11" rx="2"/><Path d="M7 11V7a5 5 0 0 1 10 0v4"/></Svg>; }
 function ITrendUp()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
 function IFlat()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={2} strokeLinecap="round"><Line x1="5" y1="12" x2="19" y2="12"/><Polyline points="14 7 19 12 14 17"/></Svg>; }
 function IBrain()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
@@ -31,14 +28,150 @@ function IStar()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fi
 function ICoin()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Circle cx="12" cy="12" r="10"/><Path d="M12 6v2m0 8v2m-4-6h8"/></Svg>; }
 function ITrophy()   { return <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M6 9H4a2 2 0 0 1-2-2V5h4"/><Path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/><Path d="M6 5h12v6a6 6 0 0 1-12 0V5z"/><Path d="M12 17v4"/><Path d="M8 21h8"/></Svg>; }
 
+// ─── RPG-themed chapter icons (map markers) ──────────────────────
+function IFlagStart({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M5 21V4"/>
+      <Path d="M5 4h11l-2 3.5L16 11H5"/>
+    </Svg>
+  );
+}
+// Footprint — far more recognizable than a hiking boot at 18px.
+function IFootprint({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M8 11.5c0-3 1.7-4.5 4-4.5s4 1.5 4 4.5c0 4-1 9.5-4 9.5s-4-5.5-4-9.5z"/>
+      <Circle cx="8" cy="5.2" r="1.1"/>
+      <Circle cx="11.3" cy="3.5" r="1.3"/>
+      <Circle cx="14.7" cy="3.8" r="1.2"/>
+      <Circle cx="17" cy="5.8" r="1.1"/>
+    </Svg>
+  );
+}
+// Blacksmith anvil — classic side silhouette with horn, neck, and base.
+function IAnvil({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M21 7 L21 10 L5 10 L2 8.5 L5 7 Z"/>
+      <Path d="M9 10 L9 15 L15 15 L15 10"/>
+      <Path d="M5 15 L19 15 L17 19 L7 19 Z"/>
+    </Svg>
+  );
+}
+function ICompass({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx="12" cy="12" r="9"/>
+      <Path d="M15 9l-1.5 4.5L9 15l1.5-4.5L15 9z"/>
+    </Svg>
+  );
+}
+function IMountain({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M3 20l5-10 3 5 3-4 7 9H3z"/>
+      <Path d="M7 12l1-1"/>
+    </Svg>
+  );
+}
+function ICrown({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M3 8l3 9h12l3-9-5 4-4-7-4 7-5-4z"/>
+      <Path d="M6 19h12"/>
+    </Svg>
+  );
+}
+function ILockChest({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x="3" y="11" width="18" height="11" rx="2"/>
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      <Circle cx="12" cy="16" r="1"/>
+    </Svg>
+  );
+}
+
 type NodeStatus = 'done' | 'active' | 'locked';
 
+function chapterIcon(chapterNumber: number | null, status: NodeStatus): React.ReactNode {
+  const color =
+    status === 'done'   ? Colors.up :
+    status === 'active' ? Colors.cr :
+                          Colors.t3;
+  if (status === 'locked') return <ILockChest color={color}/>;
+  if (chapterNumber === null) return <IFlagStart color={color}/>;
+  switch (chapterNumber) {
+    case 1: return <IFootprint color={color}/>;
+    case 2: return <IAnvil color={color}/>;
+    case 3: return <ICompass color={color}/>;
+    case 4: return <IMountain color={color}/>;
+    case 5: return <ICrown color={color}/>;
+    default: return <IFlagStart color={color}/>;
+  }
+}
+
+// ─── Curved trail connector between map nodes ────────────────────
+function CurvedConnector({ done, bowRight }: { done: boolean; bowRight: boolean }) {
+  const color = done ? `${Colors.up}55` : 'rgba(255,255,255,0.07)';
+  const d = bowRight
+    ? 'M22 0 C 40 12, 40 24, 22 34'
+    : 'M22 0 C 4 12, 4 24, 22 34';
+  return (
+    <View style={{ width: 44, height: 34, alignSelf: 'flex-start' }} pointerEvents="none">
+      <Svg width={44} height={34}>
+        <Path
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeDasharray={done ? undefined : '2 5'}
+        />
+      </Svg>
+    </View>
+  );
+}
+
+// ─── Topographic / grid map backdrop ─────────────────────────────
+function TopoMapBg() {
+  const contour    = 'rgba(232,224,212,0.07)';
+  const contourDim = 'rgba(232,224,212,0.045)';
+  const grid       = 'rgba(255,255,255,0.06)';
+  return (
+    <View style={s.bgLayer} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox="0 0 400 1400" preserveAspectRatio="xMidYMid slice">
+        {Array.from({ length: 15 }).map((_, i) => (
+          <Line key={`h${i}`} x1="0" y1={i * 100} x2="400" y2={i * 100} stroke={grid} strokeWidth={0.6}/>
+        ))}
+        {Array.from({ length: 9 }).map((_, i) => (
+          <Line key={`v${i}`} x1={i * 50} y1="0" x2={i * 50} y2="1400" stroke={grid} strokeWidth={0.6}/>
+        ))}
+        <Path d="M-20 80 Q 100 50 220 90 T 460 70"      stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 140 Q 80 110 200 150 T 460 120"   stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 220 Q 120 190 240 230 T 460 200"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 340 Q 80 310 220 350 T 460 320"   stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 440 Q 100 410 220 450 T 460 420"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 560 Q 130 530 230 570 T 460 540"  stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 680 Q 90 650 220 690 T 460 660"   stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 800 Q 110 770 220 810 T 460 780"  stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 920 Q 100 890 220 930 T 460 900"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 1040 Q 130 1010 230 1050 T 460 1020" stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 1160 Q 100 1130 220 1170 T 460 1140" stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 1280 Q 130 1250 230 1290 T 460 1260" stroke={contourDim} strokeWidth={1} fill="none"/>
+      </Svg>
+    </View>
+  );
+}
+
 interface DisplayNode {
-  id:      string;
-  label:   string;
-  sub:     string;
-  status:  NodeStatus;
-  chapter: ChapterResponse | null;
+  id:            string;
+  label:         string;
+  sub:           string;
+  status:        NodeStatus;
+  chapter:       ChapterResponse | null;
+  chapterNumber: number | null;
 }
 
 // ─── Animated node indicator: pulse on active, glow on done ──────
@@ -227,16 +360,17 @@ export default function CampaignScreen() {
 
   const startDone = doneCount > 0 || !!progress?.current_chapter_id || allComplete;
   const nodes: DisplayNode[] = [
-    { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null },
+    { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null, chapterNumber: null },
     ...chapters.map(c => {
       const st = getChapterStatus(c);
       const chapNum = (c as unknown as { chapter_number: number }).chapter_number;
       return {
-        id:      c.id,
-        label:   c.title,
-        sub:     st === 'done' ? 'Complete' : st === 'locked' ? lockedChapterSummary(chapNum) : '',
-        status:  st,
-        chapter: c,
+        id:            c.id,
+        label:         c.title,
+        sub:           st === 'done' ? 'Complete' : st === 'locked' ? lockedChapterSummary(chapNum) : '',
+        status:        st,
+        chapter:       c,
+        chapterNumber: chapNum,
       };
     }),
   ];
@@ -256,6 +390,9 @@ export default function CampaignScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+
+        {/* ── Topographic map backdrop (decorative) ── */}
+        <TopoMapBg/>
 
         {/* ── Header ── */}
         <View style={s.header}>
@@ -324,16 +461,14 @@ export default function CampaignScreen() {
           <View style={{ paddingHorizontal: Spacing.xxl }}>
             {nodes.map((node, i) => (
               <View key={node.id}>
-                {/* Node row — tappable */}
+                {/* Node row — tappable. Locked rows wear a fog-of-war veil. */}
                 <TouchableOpacity
-                  style={s.nodeRow}
+                  style={[s.nodeRow, node.status === 'locked' && s.nodeRowLocked]}
                   activeOpacity={node.status === 'locked' ? 0.5 : 0.75}
                   onPress={() => setExpandedId(expandedId === node.id ? null : node.id)}
                 >
                   <NodeIndicator status={node.status}>
-                    {node.status === 'done'   && <ICheck/>}
-                    {node.status === 'active' && <IZap/>}
-                    {node.status === 'locked' && <ILock/>}
+                    {chapterIcon(node.chapterNumber, node.status)}
                   </NodeIndicator>
 
                   <View style={{ flex: 1 }}>
@@ -593,12 +728,12 @@ export default function CampaignScreen() {
                   </View>
                 )}
 
-                {/* Connector line */}
+                {/* Curved trail connector — alternates direction for a winding-path feel */}
                 {i < nodes.length - 1 && (
-                  <View style={[
-                    s.connector,
-                    node.status === 'done' && { backgroundColor: `${Colors.up}30` },
-                  ]}/>
+                  <CurvedConnector
+                    done={node.status === 'done'}
+                    bowRight={i % 2 === 0}
+                  />
                 )}
               </View>
             ))}
@@ -627,6 +762,13 @@ const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: Colors.s1 },
   scroll: { paddingTop: Spacing.xl, paddingBottom: 40 },
 
+  // Topographic map backdrop — scrolls with content, sits behind everything.
+  bgLayer: { position: 'absolute', top: 0, left: 0, right: 0, height: 1500 },
+
+  // Fog-of-war veil on locked chapter rows: faded, so future content
+  // feels obscured rather than spelled out in plain gray.
+  nodeRowLocked: { opacity: 0.5 },
+
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
     paddingHorizontal: Spacing.xxl, marginBottom: Spacing.lg,
@@ -653,15 +795,13 @@ const s = StyleSheet.create({
   nodeCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   nodeDone:   { backgroundColor: `${Colors.up}15`,  borderWidth: 1.5, borderColor: `${Colors.up}35`  },
   nodeActive: { backgroundColor: Colors.crLo,        borderWidth: 1.5, borderColor: Colors.cr         },
-  nodeLocked: { backgroundColor: Colors.s3,          borderWidth: 1.5, borderColor: Colors.line, opacity: 0.4 },
+  nodeLocked: { backgroundColor: Colors.s3,          borderWidth: 1.5, borderColor: Colors.line, borderStyle: 'dashed' },
   nodeLabel:  { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, lineHeight: 20 },
   nodeSub:    { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2 },
   nodeProgressWrap:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   nodeProgressBarBg:   { flex: 1, height: 3, backgroundColor: Colors.s4, borderRadius: 2, overflow: 'hidden' },
   nodeProgressBarFill: { height: 3, backgroundColor: Colors.cr, borderRadius: 2 },
   nodeProgressTxt:     { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.t3 },
-
-  connector: { width: 2, height: 24, marginLeft: 21, backgroundColor: Colors.line },
 
   branchWrap:      { marginLeft: 21, marginBottom: 4 },
   branchConnector: { width: 2, height: 16, backgroundColor: `${Colors.cr}40`, marginLeft: 21, marginBottom: 12 },

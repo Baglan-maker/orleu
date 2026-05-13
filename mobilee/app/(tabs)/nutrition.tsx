@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
 
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -65,13 +66,46 @@ function ITrash() {
     </Svg>
   );
 }
+function ISword({ color, size = 16 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M14.5 17.5 L20 22 L22 20 L17.5 14.5"/>
+      <Path d="M16 4 L20 4 L20 8 L9 19 L5 19 L5 15 Z"/>
+      <Path d="M3 21 L7 17"/>
+    </Svg>
+  );
+}
+function IScroll({ color, size = 14 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M5 6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6z"/>
+      <Path d="M8 9h7M8 13h7"/>
+      <Path d="M5 6v0a2 2 0 0 0 0 4h2"/>
+      <Path d="M19 16v0a3 3 0 0 1-3 3"/>
+    </Svg>
+  );
+}
+function IShield({ color, size = 14 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 3 L20 6 V12 C20 17 16 20 12 21 C8 20 4 17 4 12 V6 Z"/>
+    </Svg>
+  );
+}
+function IBoltFilled({ color, size = 14 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth={1} strokeLinejoin="round">
+      <Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </Svg>
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────
 const MEALS: { key: MealType; label: string }[] = [
-  { key: 'breakfast', label: 'Breakfast' },
-  { key: 'lunch',     label: 'Lunch'     },
-  { key: 'dinner',    label: 'Dinner'    },
-  { key: 'snacks',    label: 'Snacks'    },
+  { key: 'breakfast', label: 'Morning Ration'   },
+  { key: 'lunch',     label: 'Midday Ration'    },
+  { key: 'dinner',    label: 'Evening Feast'    },
+  { key: 'snacks',    label: 'Potions & Snacks' },
 ];
 
 function formatDate(iso: string): string {
@@ -191,6 +225,8 @@ export default function NutritionScreen() {
 
   // ── Add food ─────────────────────────────────────────────────
   async function handleAddFood(data: FoodLogData) {
+    // Light haptic punctuates the macro-bar fill animation.
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     await logFood(selectedDate, data.mealType, data.foodItem.id, data.quantityG);
   }
 
@@ -254,6 +290,11 @@ export default function NutritionScreen() {
   // Pace marker only makes sense for today — past days are "done", future days haven't started.
   const pacePct: number | undefined = isToday ? dayPacePct() : undefined;
   const dateStrip = buildDateStrip(selectedDate);
+
+  // Daily Quest state — uses the same protein-buff signal as the toast, but
+  // surfaces it visually all day rather than as a one-shot notification.
+  const proteinPct     = pct(totalPro, goalPro);
+  const proteinGoalMet = goalPro > 0 && totalPro >= goalPro;
 
   // Reset the "claimed this session" flag whenever the visible date changes,
   // so navigating away from today and back doesn't lock out the toast forever.
@@ -345,6 +386,34 @@ export default function NutritionScreen() {
           })}
         </ScrollView>
 
+        {/* ── Daily Quest ── (tied to the protein → +5% XP buff) */}
+        <View style={[s.questCard, proteinGoalMet && isToday && s.questCardReady]}>
+          <View style={[s.questIconWrap, proteinGoalMet && isToday && s.questIconWrapReady]}>
+            <ISword color={proteinGoalMet && isToday ? Colors.flat : Colors.cr} size={18}/>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.questEyebrow}>DAILY QUEST</Text>
+            <Text style={s.questTitle}>Strength of the Bull</Text>
+            <Text style={s.questDesc}>Hit your daily protein target.</Text>
+            <View style={s.questProgressRow}>
+              <View style={{ flex: 1 }}>
+                <ProgressBar
+                  value={proteinPct}
+                  color={proteinGoalMet ? Colors.flat : Colors.cr}
+                  height={4}
+                />
+              </View>
+              <Text style={s.questProgressTxt}>{Math.round(totalPro)}/{goalPro}g</Text>
+            </View>
+            <View style={[s.questBadge, proteinGoalMet && isToday && s.questBadgeReady]}>
+              <IBoltFilled color={proteinGoalMet && isToday ? Colors.flat : Colors.t2} size={11}/>
+              <Text style={[s.questBadgeText, proteinGoalMet && isToday && s.questBadgeTextReady]}>
+                {proteinGoalMet && isToday ? 'CLAIMED · +5% XP TOMORROW' : '+5% XP TOMORROW'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
         {/* ── Macro summary card ── */}
         <View style={[s.macroCard, anyOver && s.macroCardOver]}>
           <View style={s.macroCardHeader}>
@@ -357,10 +426,13 @@ export default function NutritionScreen() {
             )}
           </View>
 
-          {/* Calories */}
+          {/* Calories — Stamina */}
           <View style={s.macroRow}>
             <View style={s.macroLabelRow}>
-              <Text style={s.macroName}>Calories</Text>
+              <View style={s.macroNameWrap}>
+                <Text style={s.macroName}>Calories</Text>
+                <Text style={[s.macroStat, { color: Colors.cr }]}>Stamina</Text>
+              </View>
               <Text style={s.macroVal}>
                 <Text style={s.macroValBig}>{totalCal.toLocaleString()}</Text>
                 {' / '}{goalCal.toLocaleString()} kcal
@@ -369,28 +441,37 @@ export default function NutritionScreen() {
             <ProgressBar value={pct(totalCal, goalCal)} color={Colors.cr} height={5} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
-          {/* Protein */}
+          {/* Protein — Strength */}
           <View style={s.macroRow}>
             <View style={s.macroLabelRow}>
-              <Text style={s.macroName}>Protein</Text>
+              <View style={s.macroNameWrap}>
+                <Text style={s.macroName}>Protein</Text>
+                <Text style={[s.macroStat, { color: Colors.macroProtein }]}>Strength</Text>
+              </View>
               <Text style={s.macroVal}>{Math.round(totalPro)} / {goalPro}g</Text>
             </View>
             <ProgressBar value={pct(totalPro, goalPro)} color={Colors.macroProtein} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
-          {/* Carbs */}
+          {/* Carbs — Energy */}
           <View style={s.macroRow}>
             <View style={s.macroLabelRow}>
-              <Text style={s.macroName}>Carbs</Text>
+              <View style={s.macroNameWrap}>
+                <Text style={s.macroName}>Carbs</Text>
+                <Text style={[s.macroStat, { color: Colors.macroCarbs }]}>Energy</Text>
+              </View>
               <Text style={s.macroVal}>{Math.round(totalCarb)} / {goalCarb}g</Text>
             </View>
             <ProgressBar value={pct(totalCarb, goalCarb)} color={Colors.macroCarbs} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
           </View>
 
-          {/* Fat */}
+          {/* Fat — Resilience */}
           <View style={s.macroRow}>
             <View style={s.macroLabelRow}>
-              <Text style={s.macroName}>Fat</Text>
+              <View style={s.macroNameWrap}>
+                <Text style={s.macroName}>Fat</Text>
+                <Text style={[s.macroStat, { color: Colors.macroFat }]}>Resilience</Text>
+              </View>
               <Text style={s.macroVal}>{Math.round(totalFat)} / {goalFat}g</Text>
             </View>
             <ProgressBar value={pct(totalFat, goalFat)} color={Colors.macroFat} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
@@ -413,6 +494,27 @@ export default function NutritionScreen() {
               </View>
             </View>
           )}
+        </View>
+
+        {/* ── Active Buffs panel ── */}
+        <View style={s.buffsCard}>
+          <Text style={s.buffsTitle}>Active Buffs</Text>
+          <View style={s.buffSlotRow}>
+            {proteinGoalMet ? (
+              <View style={s.buffSlot}>
+                <View style={s.buffSlotIcon}><ISword color={Colors.flat} size={14}/></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.buffSlotName}>Strength of the Bull</Text>
+                  <Text style={s.buffSlotEffect}>+5% XP · next workout</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={s.buffSlotEmpty}>
+                <View style={s.buffSlotIconEmpty}><IShield color={Colors.t3} size={13}/></View>
+                <Text style={s.buffSlotEmptyText}>No active buffs · complete quests to earn</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* ── Meal sections ── */}
@@ -469,21 +571,27 @@ export default function NutritionScreen() {
                 ))
               ) : (
                 <View style={s.emptyMealRow}>
+                  {/* Empty inventory slot — tap to fill */}
                   <TouchableOpacity
-                    style={s.emptyMealAdd}
+                    style={s.slotEmpty}
                     onPress={() => setModalMeal(meal.key)}
                     activeOpacity={0.7}
                   >
-                    <Text style={s.emptyMealText}>+ Add food</Text>
+                    <View style={s.slotPlus}>
+                      <IPlus color={Colors.t3}/>
+                    </View>
+                    <Text style={s.slotEmptyText}>Empty slot</Text>
                   </TouchableOpacity>
+                  {/* Repeat Ration — pulls yesterday's same-meal entries */}
                   <TouchableOpacity
-                    style={[s.copyYdayBtn, copyingMeal === meal.key && { opacity: 0.5 }]}
+                    style={[s.repeatRationBtn, copyingMeal === meal.key && { opacity: 0.5 }]}
                     onPress={() => copyFromYesterday(meal.key)}
                     disabled={copyingMeal !== null}
                     activeOpacity={0.7}
                   >
-                    <Text style={s.copyYdayText}>
-                      {copyingMeal === meal.key ? 'Copying…' : 'Copy yesterday'}
+                    <IScroll color={Colors.cr}/>
+                    <Text style={s.repeatRationText}>
+                      {copyingMeal === meal.key ? 'Repeating…' : 'Repeat Ration'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -595,24 +703,31 @@ const s = StyleSheet.create({
   deleteBtn:  { padding: 6, marginLeft: 8 },
   deletingText: { fontSize: 14, color: Colors.t3 },
 
+  // Empty meal area styled as an inventory slot row (dashed top border, two cells).
   emptyMealRow:  {
     flexDirection: 'row',
     alignItems: 'stretch',
     borderTopWidth: 1, borderTopColor: Colors.line, borderStyle: 'dashed',
   },
-  emptyMealAdd: {
+  slotEmpty: {
     flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: Spacing.lg, paddingVertical: 14,
-    alignItems: 'center', justifyContent: 'center',
   },
-  emptyMealText: { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t3 },
-  copyYdayBtn: {
-    paddingHorizontal: Spacing.lg, paddingVertical: 14,
+  slotPlus: {
+    width: 24, height: 24, borderRadius: 6,
+    borderWidth: 1, borderColor: Colors.line, borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.s3,
+  },
+  slotEmptyText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.t3, letterSpacing: 0.6, textTransform: 'uppercase' },
+  repeatRationBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: Spacing.lg, paddingVertical: 14,
     borderLeftWidth: 1, borderLeftColor: Colors.line,
     backgroundColor: Colors.s3,
   },
-  copyYdayText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr, letterSpacing: 0.3 },
+  repeatRationText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr, letterSpacing: 0.3 },
 
   // Date strip
   dateStrip: {
@@ -657,10 +772,113 @@ const s = StyleSheet.create({
     gap: 6,
   },
   paceLegendLine: {
-    width: 2, height: 12, borderRadius: 1,
-    backgroundColor: 'rgba(232, 224, 212, 0.55)',
+    width: 3, height: 12, borderRadius: 1.5,
+    backgroundColor: '#FFFFFF',
   },
   paceLegendText: {
     fontSize: 10, fontFamily: Fonts.monoBold, letterSpacing: 0.4, color: Colors.t3,
   },
+
+  // ── Daily Quest card ────────────────────────────────────────────
+  questCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.s2,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.crBdr,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  questCardReady: {
+    borderColor: `${Colors.flat}55`,
+    backgroundColor: `${Colors.flat}10`,
+  },
+  questIconWrap: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: Colors.crLo,
+    borderWidth: 1, borderColor: Colors.crBdr,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  questIconWrapReady: {
+    backgroundColor: `${Colors.flat}15`,
+    borderColor: `${Colors.flat}55`,
+  },
+  questEyebrow: { fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.cr, textTransform: 'uppercase', marginBottom: 2 },
+  questTitle:   { fontSize: 15, fontFamily: Fonts.displayBold, color: Colors.bone, letterSpacing: -0.2 },
+  questDesc:    { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t2, marginTop: 2, marginBottom: 8 },
+
+  questProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  questProgressTxt: { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.t2 },
+
+  questBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.s3,
+    borderWidth: 1, borderColor: Colors.line,
+  },
+  questBadgeReady: {
+    backgroundColor: `${Colors.flat}15`,
+    borderColor: `${Colors.flat}55`,
+    // Soft glow to draw the eye to the claimed state.
+    shadowColor: Colors.flat,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  questBadgeText:      { fontSize: 10, fontFamily: Fonts.bold, color: Colors.t2, letterSpacing: 0.8 },
+  questBadgeTextReady: { color: Colors.flat },
+
+  // ── Active Buffs panel ──────────────────────────────────────────
+  buffsCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.s2,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.line,
+  },
+  buffsTitle: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.t3, textTransform: 'uppercase', marginBottom: 10 },
+  buffSlotRow: { gap: 8 },
+  buffSlot: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: `${Colors.flat}10`,
+    borderRadius: Radius.md,
+    borderWidth: 1, borderColor: `${Colors.flat}40`,
+  },
+  buffSlotIcon: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: `${Colors.flat}18`,
+    borderWidth: 1, borderColor: `${Colors.flat}55`,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  buffSlotName:   { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.bone },
+  buffSlotEffect: { fontSize: 11, fontFamily: Fonts.mono, color: Colors.flat, marginTop: 1 },
+
+  buffSlotEmpty: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: Colors.s3,
+    borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.line, borderStyle: 'dashed',
+  },
+  buffSlotIconEmpty: {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.s4,
+    borderWidth: 1, borderColor: Colors.line,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  buffSlotEmptyText: { fontSize: 11, fontFamily: Fonts.semiBold, color: Colors.t3, letterSpacing: 0.3, flex: 1 },
+
+  // ── Macro name + RPG stat subtitle ──────────────────────────────
+  macroNameWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  macroStat:     { fontSize: 9,  fontFamily: Fonts.bold, letterSpacing: 1.2, textTransform: 'uppercase' },
 });
