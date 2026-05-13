@@ -140,6 +140,7 @@ export default function RootLayout() {
         <Stack.Screen name="history"       options={{ animation: 'slide_from_right' }}/>
         <Stack.Screen name="streaks"       options={{ animation: 'slide_from_right' }}/>
         <Stack.Screen name="profile"       options={{ animation: 'slide_from_right' }}/>
+        <Stack.Screen name="paywall"       options={{ animation: 'slide_from_bottom', presentation: 'modal' }}/>
         <Stack.Screen name="workout/[id]"  options={{ animation: 'slide_from_right' }}/>
       </Stack>
       {/* Floating rest-timer pill — visible on every screen while a rest is running */}

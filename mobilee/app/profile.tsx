@@ -30,6 +30,8 @@ function ITarget()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fil
 function IWeight()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M2 20h20"/><Path d="M6 20V10l6-8 6 8v10"/><Path d="M10 20v-5h4v5"/></Svg>; }
 function IDownload(){ return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.t2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><Polyline points="7 10 12 15 17 10"/><Line x1="12" y1="15" x2="12" y2="3"/></Svg>; }
 function ITrash()   { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Polyline points="3 6 5 6 21 6"/><Path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><Path d="M10 11v6"/><Path d="M14 11v6"/><Path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></Svg>; }
+function ICrown()   { return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M2 7l4 9h12l4-9-6 4-4-7-4 7-6-4z"/><Line x1="6" y1="20" x2="18" y2="20"/></Svg>; }
+function IChevronCr() { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="9 18 15 12 9 6"/></Svg>; }
 
 const GOAL_LABEL: Record<string, string> = {
   strength:    'Strength',
@@ -160,6 +162,22 @@ export default function ProfileScreen() {
             </View>
           </View>
         </View>
+
+        {/* Pro upsell */}
+        <TouchableOpacity
+          style={s.proCard}
+          activeOpacity={0.85}
+          onPress={() => router.push('/paywall' as any)}
+        >
+          <View style={s.proIconBox}>
+            <ICrown/>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.proTitle}>Upgrade to Pro</Text>
+            <Text style={s.proSub}>30 days free, then $10/mo</Text>
+          </View>
+          <IChevronCr/>
+        </TouchableOpacity>
 
         {/* Account */}
         <View style={s.section}>
@@ -328,6 +346,29 @@ const s = StyleSheet.create({
   tagRow:  { flexDirection: 'row', gap: 6 },
   tag:     { backgroundColor: Colors.s4, borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: Colors.line },
   tagText: { fontSize: 10, fontFamily: Fonts.semiBold, color: Colors.t3 },
+
+  proCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.xl,
+    backgroundColor: Colors.crLo,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.crBdr,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  proIconBox: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: Colors.crMid,
+    borderWidth: 1, borderColor: Colors.crBdr,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  proTitle: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.t1, marginBottom: 2 },
+  proSub:   { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t2 },
 
   section:    { marginHorizontal: Spacing.lg, marginBottom: Spacing.md },
   sectionLbl: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.8, color: Colors.t3, textTransform: 'uppercase', marginBottom: 8 },
