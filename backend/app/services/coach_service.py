@@ -3,17 +3,24 @@ Coach message generation.
 
 generate_message(user_id, prediction, db)
   → creates a CoachMessage tied to the given MlPrediction.
-  Picks template based on (trend, top_shap_feature).
+  Tries the LLM first; falls back to hardcoded templates on any failure
+  (no API key, timeout, rate limit, bad response, etc.).
   Idempotent: returns None if a message already exists for that prediction_id.
 """
 from __future__ import annotations
 
+import logging
 import random
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.auth import User
+from app.models.gamification import UserProgress
 from app.models.ml import CoachMessage, MlPrediction
+from app.services import llm_service
+
+logger = logging.getLogger(__name__)
 
 
 # 2 variants per slot for natural variety. (3 trends × 5 features × 2 = 30 messages)
@@ -100,6 +107,29 @@ def _top_feature(shap_values: dict[str, float]) -> str | None:
     return max(shap_values.items(), key=lambda kv: kv[1])[0]
 
 
+def _template_message(trend: str, shap_values: dict[str, float]) -> str | None:
+    feat = _top_feature(shap_values)
+    if feat is None or trend not in _TEMPLATES:
+        return None
+    variants = _TEMPLATES[trend].get(feat)
+    if not variants:
+        return None
+    return random.choice(variants)
+
+
+def _load_user_context(user_id: UUID, db: Session) -> dict:
+    """Light user snapshot for the LLM prompt. Safe defaults if any row is missing."""
+    user     = db.query(User).filter(User.id == user_id).first()
+    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    return {
+        "experience_level": getattr(user,     "experience_level", "beginner"),
+        "primary_goal":     getattr(user,     "primary_goal",     "strength"),
+        "level":            getattr(progress, "level",            1),
+        "current_streak":   getattr(progress, "current_streak",   0),
+        "total_workouts":   getattr(progress, "total_workouts",   0),
+    }
+
+
 def generate_message(
     user_id:    UUID,
     prediction: MlPrediction,
@@ -108,7 +138,7 @@ def generate_message(
     """
     Create a CoachMessage tied to the given prediction.
     Idempotent on prediction_id: re-runs of the nightly job won't duplicate messages.
-    Returns the new message, or None if one already exists / template missing.
+    Returns the new message, or None if one already exists / no template match.
     """
     existing = (
         db.query(CoachMessage)
@@ -121,18 +151,28 @@ def generate_message(
     trend = prediction.trend
     shap  = prediction.shap_values or {}
 
-    feat = _top_feature(shap)
-    if feat is None or trend not in _TEMPLATES:
+    # Templates are the canonical fallback — if even they don't match, skip.
+    fallback_text = _template_message(trend, shap)
+    if fallback_text is None:
         return None
 
-    variants = _TEMPLATES[trend].get(feat)
-    if not variants:
-        return None
+    # Try LLM; on any failure keep the template text.
+    text = fallback_text
+    try:
+        ctx = _load_user_context(user_id, db)
+        text = llm_service.generate_coach_message(
+            trend       = trend,
+            confidence  = float(prediction.confidence or 0.0),
+            shap_values = shap,
+            user_context = ctx,
+        )
+    except Exception as e:
+        logger.warning("LLM coach message failed, using template: %s", e)
 
     msg = CoachMessage(
         user_id       = user_id,
         prediction_id = prediction.id,
-        message_text  = random.choice(variants),
+        message_text  = text,
         tone          = _TONE_MAP.get(trend, "neutral"),
     )
     db.add(msg)

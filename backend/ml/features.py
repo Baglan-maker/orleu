@@ -3,7 +3,7 @@ Feature extraction for the Orleu ML pipeline.
 build_features(user_id, db) → dict of 5 floats used by predict_trend().
 """
 from uuid import UUID
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session

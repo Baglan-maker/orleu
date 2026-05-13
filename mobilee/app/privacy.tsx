@@ -36,7 +36,7 @@ const SECTIONS = [
   },
   {
     title: '6. Data Sharing',
-    body: `We do not share, sell, or rent your personal information to third parties. The only exception is if we are required by law (e.g., a valid court order) to disclose information, in which case we will notify you to the extent permitted by law.\n\nAggregated, anonymized data (e.g., average workout frequency across all users) may be used for academic research purposes in the context of the thesis project. This data cannot be used to identify any individual user.`,
+    body: `We do not sell or rent your personal information to third parties.\n\nOne automated exception: to generate the natural-language "coach message" attached to each ML prediction, the backend sends a small, non-identifying snapshot to OpenRouter (an LLM API gateway). This snapshot contains only: the predicted trend ("improving" / "plateau" / "declining"), the top model-explainability values (SHAP), and a short context block (experience level, primary goal, level, current streak, total workouts). It does NOT contain your name, email, account ID, photos, individual workout history, or location. If the LLM call fails for any reason, a hardcoded template message is used instead.\n\nWe will also disclose information if required by law (e.g., a valid court order), in which case we will notify you to the extent permitted by law.\n\nAggregated, anonymized data (e.g., average workout frequency across all users) may be used for academic research purposes in the context of the thesis project. This data cannot be used to identify any individual user.`,
   },
   {
     title: '7. Children\'s Privacy',
@@ -48,7 +48,7 @@ const SECTIONS = [
   },
   {
     title: '9. Third-Party Services',
-    body: `The App uses the following third-party services:\n\n• Expo (Expo Go / EAS Build): The development framework used to build and run the App. Subject to Expo's own privacy policy.\n\n• React Native: The UI framework. No data is sent to Meta by the framework itself.\n\nWe do not integrate analytics SDKs (e.g., Firebase Analytics, Mixpanel, Amplitude) or advertising networks.`,
+    body: `The App uses the following third-party services:\n\n• Expo (Expo Go / EAS Build): The development framework used to build and run the App. Subject to Expo's own privacy policy.\n\n• React Native: The UI framework. No data is sent to Meta by the framework itself.\n\n• OpenRouter (openrouter.ai): An LLM API gateway used server-side to generate the natural-language text of coach messages. See Section 6 for the exact data sent. Subject to OpenRouter's own privacy policy.\n\nWe do not integrate analytics SDKs (e.g., Firebase Analytics, Mixpanel, Amplitude) or advertising networks.`,
   },
   {
     title: '10. Changes to This Policy',
