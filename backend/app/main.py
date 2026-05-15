@@ -62,6 +62,7 @@ from app.api import debug         # noqa: E402
 from app.api import nutrition         # noqa: E402
 from app.api import personal_records  # noqa: E402
 from app.api import coach             # noqa: E402
+from app.api import admin             # noqa: E402
 
 app.include_router(auth.router,             prefix="/api/auth",         tags=["Auth"])
 app.include_router(exercises.router,        prefix="/api/exercises",    tags=["Exercises"])
@@ -74,3 +75,4 @@ app.include_router(debug.router,            prefix="/api/debug",        tags=["D
 app.include_router(nutrition.router,        prefix="/api/nutrition",    tags=["Nutrition"])
 app.include_router(personal_records.router, prefix="/api/prs",          tags=["Personal Records"])
 app.include_router(coach.router,            prefix="/api/coach",        tags=["Coach"])
+app.include_router(admin.router,            prefix="/admin",            tags=["Admin"])

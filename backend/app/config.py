@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     OPENROUTER_FALLBACK_MODEL: str = "openai/gpt-oss-20b:free"
     OPENROUTER_TIMEOUT_S: float = 10.0
 
+    # Admin dashboard (HTTP Basic auth on /admin/*). Disabled if either is empty.
+    ADMIN_USERNAME: str = ""
+    ADMIN_PASSWORD: str = ""
+
     class Config:
         env_file = ".env"
 
