@@ -10,6 +10,7 @@ class AchievementOut(BaseModel):
     id:        UUID
     name:      str
     icon_key:  str
+    rarity:    str = 'common'
     earned:    bool
     earned_at: Optional[datetime] = None
 
@@ -23,8 +24,9 @@ class AchievementFullOut(BaseModel):
     icon_key:        str
     condition_type:  str
     condition_value: int
-    earned:          bool
-    earned_at:       Optional[datetime] = None
+    rarity:          str = 'common'
+    earned:           bool
+    earned_at:        Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

@@ -8,6 +8,7 @@ export interface Achievement {
   icon_key:        string;
   condition_type:  string;
   condition_value: number;
+  rarity:          'common' | 'rare' | 'epic';
   earned:          boolean;
   earned_at:       string | null;
 }

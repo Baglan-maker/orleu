@@ -17,9 +17,12 @@ import {
 // Для разработки: IP твоего компьютера в локальной сети
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
-const BASE_URL = __DEV__
-  ? 'http://10.202.11.16:8080'   // ← замени на свой IP
-  : 'https://api.orleu.app';       // production (пока не нужно)
+const BASE_URL = "https://orleu.onrender.com"
+
+
+// __DEV__
+//   ? 'http://192.168.100.68:8080'   // ← замени на свой IP
+//   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
   baseURL: BASE_URL,

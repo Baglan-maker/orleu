@@ -225,6 +225,8 @@ export default function ProfileScreen() {
   const [loading,        setLoading]        = useState(true);
   const [fetchError,     setFetchError]     = useState<string | null>(null);
   const [xpInfoOpen,     setXpInfoOpen]     = useState(false);
+  const [scoreInfoOpen,  setScoreInfoOpen]  = useState(false);
+  const [streakInfoOpen, setStreakInfoOpen] = useState(false);
   const [freezeOpen,     setFreezeOpen]     = useState(false);
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
@@ -329,15 +331,6 @@ export default function ProfileScreen() {
   const longest  = progress?.longest_streak ?? 0;
   const coins    = progress?.coins ?? 0;
   const freezes  = progress?.streak_freezes ?? 0;
-  const buffDate = progress?.nutrition_buff_date ?? null;
-  // The buff is "active" once today's date matches buff_date (next workout consumes it).
-  // It's "pending" when buff_date is in the future (earned today, usable tomorrow).
-  const todayLocalISO = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
-  const buffActive  = buffDate != null && buffDate === todayLocalISO;
-  const buffPending = buffDate != null && buffDate > todayLocalISO;
 
   const isMaxLevel = level >= 5;
   const xpNext   = xpForLevel(level); // 0 when max level
@@ -354,10 +347,11 @@ export default function ProfileScreen() {
   const isMlTrend  = mlStatus?.available && mlStatus.trend;
   const trendLabel = isMlTrend
     ? ML_TREND_LABEL[mlStatus.trend!]
-    : streak >= 3 ? 'Improving' : streak >= 1 ? 'Active' : 'Getting Started';
+    : streak >= 3 ? 'Building Momentum' : streak >= 1 ? 'On Track' : 'Just Started';
   const trendColor = isMlTrend
     ? ML_TREND_COLOR[mlStatus.trend!]
-    : streak >= 3 ? Colors.up : streak >= 1 ? Colors.bone : Colors.t3;
+    : streak >= 3 ? Colors.up : streak >= 1 ? Colors.bone : '#9DD49B';
+  const [trendInfoOpen, setTrendInfoOpen] = useState(false);
 
   const achList     = storeAchievements.length > 0 ? storeAchievements : (progress?.achievements ?? []);
   const earnedAch   = achList.filter(a => a.earned);
@@ -436,7 +430,11 @@ export default function ProfileScreen() {
             source={getCharacterImage(themeId, stage)}
             style={s.characterImg}
           />
-          <View style={[s.trendBadge, { borderColor: trendColor + '40' }]}>
+          <TouchableOpacity
+            style={[s.trendBadge, { borderColor: trendColor + '40' }]}
+            onPress={() => setTrendInfoOpen(!trendInfoOpen)}
+            activeOpacity={0.7}
+          >
             <View style={[s.trendDot, { backgroundColor: trendColor }]} />
             <Text style={[s.trendText, { color: trendColor }]}>{trendLabel}</Text>
             {isMlTrend && mlStatus.confidence != null && (
@@ -444,27 +442,76 @@ export default function ProfileScreen() {
                 {Math.round(mlStatus.confidence * 100)}%
               </Text>
             )}
-          </View>
-          <Text style={s.scoreLabel}>ASCENT SCORE</Text>
-          <Text style={s.scoreValue}>{score}</Text>
-        </View>
+          </TouchableOpacity>
 
-        {/* ── Nutrition buff banner ── */}
-        {(buffActive || buffPending) && (
-          <View style={s.buffBanner}>
-            <Text style={s.buffBannerIcon}>🥩</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.buffBannerTitle}>
-                {buffActive ? '+5% XP buff active' : '+5% XP buff queued'}
-              </Text>
-              <Text style={s.buffBannerSub}>
-                {buffActive
-                  ? 'Your next workout earns +5% XP — go log a session.'
-                  : "Tomorrow's first workout earns +5% XP. Keep it up!"}
-              </Text>
+          {trendInfoOpen && (
+            <View style={s.infoBox}>
+              {isMlTrend ? (
+                <>
+                  <Text style={s.infoText}>
+                    <Text style={s.infoBold}>ML-Powered Trend:</Text> Based on your last 2 weeks of workouts, volume progression, and consistency.
+                  </Text>
+                  <Text style={s.infoLine}>This prediction updates nightly.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.infoText}>
+                    <Text style={s.infoBold}>Status Explanation:</Text>
+                  </Text>
+                  {streak === 0 && (
+                    <Text style={s.infoText}>
+                      <Text style={s.infoBold}>Just Started</Text> — No active streak. Log a workout to build momentum!
+                    </Text>
+                  )}
+                  {streak === 1 && (
+                    <Text style={s.infoText}>
+                      <Text style={s.infoBold}>On Track</Text> — You have 1 workout this streak. Keep it up for 2 more days!
+                    </Text>
+                  )}
+                  {streak === 2 && (
+                    <Text style={s.infoText}>
+                      <Text style={s.infoBold}>On Track</Text> — You have 2 workouts this streak. One more to unlock ML predictions!
+                    </Text>
+                  )}
+                  {streak >= 3 && (
+                    <>
+                      <Text style={s.infoText}>
+                        <Text style={s.infoBold}>Building Momentum</Text> — {streak} workouts in a row! 🔥
+                      </Text>
+                      {!isMlTrend && (
+                        <Text style={[s.infoText, { marginTop: 8 }]}>
+                          ML predictions unlock after 14 days registered + 3 workouts.
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </View>
+          )}
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={s.scoreLabel}>ASCENT SCORE</Text>
+            <TouchableOpacity
+              onPress={() => setScoreInfoOpen(!scoreInfoOpen)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={s.infoIconBtn}
+            >
+              <Text style={s.infoIconText}>{scoreInfoOpen ? '−' : 'i'}</Text>
+            </TouchableOpacity>
           </View>
-        )}
+          <Text style={s.scoreValue}>{score}</Text>
+          {scoreInfoOpen && (
+            <View style={s.infoBox}>
+              <Text style={s.infoText}>
+                <Text style={s.infoBold}>Ascent Score</Text> measures your overall progress:
+              </Text>
+              <Text style={s.infoLine}>• {totalWorkouts} sessions × 12 = {totalWorkouts * 12} pts</Text>
+              <Text style={s.infoLine}>• Stage {stage} × 80 = {stage * 80} pts</Text>
+              <Text style={s.infoLine}>• {xp} XP × 0.1 = {Math.round(xp * 0.1)} pts</Text>
+            </View>
+          )}
+        </View>
 
         {/* ── Stat Pills ── */}
         <View style={s.pillRow}>
@@ -559,10 +606,25 @@ export default function ProfileScreen() {
               <Text style={s.streakStatLabel}>Best</Text>
             </View>
           </View>
-          <Text style={s.streakHint}>
-            Train at least every 2 days to keep your streak — missing 3+ days resets it.{'\n'}
-            <Text style={s.streakHintEmph}>❄ Streak Freeze</Text> protects you for one extra missed day beyond the 2-day grace period.
-          </Text>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}
+            onPress={() => setStreakInfoOpen(!streakInfoOpen)}
+          >
+            <View style={s.streakInfoIconBtn}>
+              <Text style={s.streakInfoIconText}>{streakInfoOpen ? '−' : 'i'}</Text>
+            </View>
+            <Text style={s.streakHintSmall}>How Streak Freezes work</Text>
+          </TouchableOpacity>
+          {streakInfoOpen && (
+            <View style={s.infoBox}>
+              <Text style={s.infoText}>
+                <Text style={s.infoBold}>Grace period:</Text> Train at least every 2 days to keep your streak active. Missing 3+ consecutive days resets it.
+              </Text>
+              <Text style={s.infoText}>
+                <Text style={s.infoBold}>Streak Freeze:</Text> Using a freeze gives you 1 extra missed day beyond the 2-day grace period. You can own up to 2 freezes.
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* ── Level & XP ── */}
@@ -681,23 +743,40 @@ export default function ProfileScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.achScroll}
             >
-              {achList.map(a => (
-                <View key={a.id} style={[s.achItem, !a.earned && { opacity: 0.35 }]}>
-                  <View style={[
-                    s.achBox,
-                    a.earned
-                      ? { backgroundColor: Colors.crLo, borderColor: Colors.crBdr }
-                      : { backgroundColor: Colors.s3,   borderColor: Colors.line },
-                  ]}>
-                    <AchievementIcon
-                      iconKey={a.icon_key}
-                      color={a.earned ? Colors.cr : Colors.t3}
-                      size={22}
-                    />
-                  </View>
-                  <Text style={s.achLabel} numberOfLines={2}>{a.name}</Text>
-                </View>
-              ))}
+              {achList.map(a => {
+                const getRarityBorderColor = (rarity: string, earned: boolean) => {
+                  if (!earned) return Colors.line;
+                  switch (rarity) {
+                    case 'epic': return '#FFD700';
+                    case 'rare': return '#9DD49B';
+                    default: return Colors.crBdr;
+                  }
+                };
+
+                return (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[s.achItem, !a.earned && { opacity: 0.35 }]}
+                    onPress={() => router.push('/achievements')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[
+                      s.achBox,
+                      a.earned
+                        ? { backgroundColor: Colors.crLo, borderColor: getRarityBorderColor(a.rarity || 'common', true) }
+                        : { backgroundColor: Colors.s3,   borderColor: Colors.line },
+                      a.earned && a.rarity === 'epic' && s.achBoxEpic,
+                    ]}>
+                      <AchievementIcon
+                        iconKey={a.icon_key}
+                        color={a.earned ? Colors.cr : Colors.t3}
+                        size={22}
+                      />
+                    </View>
+                    <Text style={s.achLabel} numberOfLines={2}>{a.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
         </View>
@@ -784,7 +863,7 @@ const s = StyleSheet.create({
     borderRadius: 3,
   },
   trendText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: Fonts.semiBold,
     letterSpacing: 0.3,
   },
@@ -798,44 +877,64 @@ const s = StyleSheet.create({
     fontSize: 11,
     fontFamily: Fonts.bold,
     letterSpacing: 1.8,
-    color: Colors.t3,
+    color: Colors.t2,
     marginBottom: 2,
   },
   scoreValue: {
-    fontSize: 28,
+    fontSize: 32,
     fontFamily: Fonts.monoBold,
     color: Colors.bone,
-    letterSpacing: -1,
+    letterSpacing: -1.5,
   },
 
-  // ── Nutrition buff banner ──
-  buffBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-    padding: 12,
-    backgroundColor: 'rgba(157,212,155,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(157,212,155,0.30)',
-    borderRadius: Radius.md,
-  },
-  buffBannerIcon: {
-    fontSize: 22,
-  },
-  buffBannerTitle: {
-    fontSize: 13,
+  // Info icon & expandable info boxes
+  infoIcon: {
+    fontSize: 14,
     fontFamily: Fonts.bold,
-    color: '#9DD49B',
-    letterSpacing: 0.3,
-    marginBottom: 2,
+    color: Colors.t3,
+    width: 18,
+    height: 18,
+    textAlign: 'center',
+    textAlignVertical: 'center',
   },
-  buffBannerSub: {
+  infoIconBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: Colors.t3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoIconText: {
     fontSize: 11,
+    fontFamily: Fonts.bold,
+    color: Colors.t3,
+  },
+  infoBox: {
+    backgroundColor: 'rgba(107,158,107,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(107,158,107,0.25)',
+    borderRadius: Radius.md,
+    padding: 12,
+    marginTop: 12,
+  },
+  infoText: {
+    fontSize: 12,
     fontFamily: Fonts.regular,
     color: Colors.t2,
-    lineHeight: 15,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  infoBold: {
+    fontFamily: Fonts.semiBold,
+    color: Colors.t1,
+  },
+  infoLine: {
+    fontSize: 11,
+    fontFamily: Fonts.mono,
+    color: Colors.t3,
+    marginBottom: 4,
   },
 
   // ── Stat Pills ──
@@ -1133,6 +1232,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  achBoxEpic: {
+    borderWidth: 2,
+    shadowColor: '#FFD700',
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+  },
   achLabel: {
     fontSize: 9,
     fontFamily: Fonts.regular,
@@ -1173,18 +1279,25 @@ const s = StyleSheet.create({
     lineHeight: 15,
   },
 
-  // Streak rule hint
-  streakHint: {
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    color: Colors.t3,
-    textAlign: 'center',
-    marginTop: Spacing.md,
-    lineHeight: 16,
+  // Streak info toggle
+  streakHintSmall: {
+    fontSize: 12,
+    fontFamily: Fonts.semiBold,
+    color: Colors.t2,
   },
-  streakHintEmph: {
-    color: '#7BC4E8',
+  streakInfoIconBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#7BC4E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakInfoIconText: {
+    fontSize: 13,
     fontFamily: Fonts.bold,
+    color: '#7BC4E8',
   },
 
   // Streak Freeze inventory chip in the streak card header

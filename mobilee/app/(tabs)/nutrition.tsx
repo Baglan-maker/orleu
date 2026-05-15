@@ -135,16 +135,6 @@ function macroRatio(kcal: number, p: number, c: number, f: number): { p: number;
   };
 }
 
-/** Expected % of daily intake by current time, anchored to an 8am–9pm eating window. */
-function dayPacePct(): number {
-  const d = new Date();
-  const minutes = d.getHours() * 60 + d.getMinutes();
-  const start = 8 * 60;            // 08:00
-  const end   = 21 * 60;           // 21:00
-  if (minutes <= start) return 0;
-  if (minutes >= end) return 100;
-  return Math.round(((minutes - start) / (end - start)) * 100);
-}
 
 const DATE_STRIP_DAYS = 14;
 
@@ -286,8 +276,6 @@ export default function NutritionScreen() {
   const anyOver = totalCal > goalCal || totalPro > goalPro || totalCarb > goalCarb || totalFat > goalFat;
   const ratio   = macroRatio(totalCal, totalPro, totalCarb, totalFat);
 
-  // Pace marker only makes sense for today — past days are "done", future days haven't started.
-  const pacePct: number | undefined = isToday ? dayPacePct() : undefined;
   const dateStrip = buildDateStrip(selectedDate);
 
   // Daily Quest state — uses the same protein-buff signal as the toast, but
@@ -417,12 +405,6 @@ export default function NutritionScreen() {
         <View style={[s.macroCard, anyOver && s.macroCardOver]}>
           <View style={s.macroCardHeader}>
             <Text style={s.macroCardTitle}>Daily Macros</Text>
-            {pacePct != null && (
-              <View style={s.paceLegend}>
-                <View style={s.paceLegendLine}/>
-                <Text style={s.paceLegendText}>Pace · {pacePct}%</Text>
-              </View>
-            )}
           </View>
 
           {/* Calories — Stamina */}
@@ -437,7 +419,7 @@ export default function NutritionScreen() {
                 {' / '}{goalCal.toLocaleString()} kcal
               </Text>
             </View>
-            <ProgressBar value={pct(totalCal, goalCal)} color={Colors.cr} height={5} paceMarker={pacePct} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalCal, goalCal)} color={Colors.cr} height={5}  style={{ marginTop: 5 }}/>
           </View>
 
           {/* Protein — Strength */}
@@ -449,7 +431,7 @@ export default function NutritionScreen() {
               </View>
               <Text style={s.macroVal}>{Math.round(totalPro)} / {goalPro}g</Text>
             </View>
-            <ProgressBar value={pct(totalPro, goalPro)} color={Colors.macroProtein} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalPro, goalPro)} color={Colors.macroProtein} height={4}  style={{ marginTop: 5 }}/>
           </View>
 
           {/* Carbs — Energy */}
@@ -461,7 +443,7 @@ export default function NutritionScreen() {
               </View>
               <Text style={s.macroVal}>{Math.round(totalCarb)} / {goalCarb}g</Text>
             </View>
-            <ProgressBar value={pct(totalCarb, goalCarb)} color={Colors.macroCarbs} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalCarb, goalCarb)} color={Colors.macroCarbs} height={4}  style={{ marginTop: 5 }}/>
           </View>
 
           {/* Fat — Resilience */}
@@ -473,7 +455,7 @@ export default function NutritionScreen() {
               </View>
               <Text style={s.macroVal}>{Math.round(totalFat)} / {goalFat}g</Text>
             </View>
-            <ProgressBar value={pct(totalFat, goalFat)} color={Colors.macroFat} height={4} paceMarker={pacePct} style={{ marginTop: 5 }}/>
+            <ProgressBar value={pct(totalFat, goalFat)} color={Colors.macroFat} height={4}  style={{ marginTop: 5 }}/>
           </View>
 
           {/* Macro ratio chips */}
@@ -758,24 +740,12 @@ const s = StyleSheet.create({
   },
   dateChipTextActive: { color: Colors.bone },
 
-  // Macro card header + pace legend
+  // Macro card header
   macroCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 14,
-  },
-  paceLegend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  paceLegendLine: {
-    width: 3, height: 12, borderRadius: 1.5,
-    backgroundColor: '#FFFFFF',
-  },
-  paceLegendText: {
-    fontSize: 10, fontFamily: Fonts.monoBold, letterSpacing: 0.4, color: Colors.t3,
   },
 
   // ── Daily Quest card ────────────────────────────────────────────

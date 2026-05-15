@@ -135,6 +135,7 @@ class Achievement(Base):
     icon_key        = Column(String(50),  nullable=False)
     condition_type  = Column(String(50),  nullable=False)
     condition_value = Column(Integer,     nullable=False)
+    rarity          = Column(String(20),  nullable=False, default='common')
 
     user_achievements = relationship("UserAchievement", back_populates="achievement")
 

@@ -3,6 +3,7 @@ import {
   Image, KeyboardAvoidingView, Platform, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,9 +11,26 @@ import { useAuthStore, RegisterData } from '../../store/authStore';
 import { Colors, Fonts, Spacing, Radius, CHARACTERS, getCharacterImage } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { Input  } from '../../components/ui/Input';
+import { validateEmail, validatePassword, getPasswordStrength } from '../../services/validation';
 
 // Степы регистрации: 0 = credentials, 1 = avatar + goals
 type Step = 0 | 1;
+
+// Password validation checklist item
+function PasswordCheck({ label, checked }: { label: string; checked: boolean }) {
+  return (
+    <View style={styles.checkItem}>
+      <View style={[styles.checkBox, checked && styles.checkBoxDone]}>
+        {checked && (
+          <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+            <Path d="M20 6L9 17l-5-5" stroke={Colors.up} strokeWidth={2.5} strokeLinecap="round" />
+          </Svg>
+        )}
+      </View>
+      <Text style={[styles.checkLabel, checked && styles.checkLabelDone]}>{label}</Text>
+    </View>
+  );
+}
 
 const EXPERIENCE = [
   { value: 'beginner',     label: 'Beginner',     sub: 'Less than 1 year' },
@@ -45,11 +63,15 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const emailVal = validateEmail(email);
+  const passwordVal = validatePassword(password);
+  const passwordStrength = getPasswordStrength(passwordVal);
+
   function validateStep0() {
     const errs: Record<string, string> = {};
-    if (!name.trim())           errs.name     = 'Name is required';
-    if (!email.trim())          errs.email    = 'Email is required';
-    if (password.length < 6)    errs.password = 'At least 6 characters';
+    if (!name.trim())        errs.name = 'Name is required';
+    if (!emailVal.valid)     errs.email = emailVal.error || 'Invalid email';
+    if (!passwordVal.valid)  errs.password = 'Password must have 6+ chars, uppercase & lowercase';
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -124,25 +146,70 @@ export default function RegisterScreen() {
                 error={fieldErrors.name}
                 textContentType="name"
               />
-              <Input
-                label="Email"
-                placeholder="you@example.com"
-                value={email}
-                onChangeText={t => { setEmail(t); setFieldErrors(e => ({...e, email: ''})); }}
-                error={fieldErrors.email}
-                keyboardType="email-address"
-                textContentType="emailAddress"
+
+              {/* Email with inline validation */}
+              <View style={styles.inputBlock}>
+                <Input
+                  label="Email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChangeText={t => { setEmail(t); setFieldErrors(e => ({...e, email: ''})); }}
+                  error={fieldErrors.email}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                />
+                {email.length > 0 && emailVal.valid && (
+                  <View style={styles.validIcon}>
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                      <Path d="M20 6L9 17l-5-5" stroke="#6B9E6B" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
+                  </View>
+                )}
+              </View>
+
+              {/* Password with strength indicator */}
+              <View style={styles.passwordBlock}>
+                <Input
+                  label="Password"
+                  placeholder="Min. 6 characters, uppercase & lowercase"
+                  value={password}
+                  onChangeText={t => { setPassword(t); setFieldErrors(e => ({...e, password: ''})); }}
+                  error={fieldErrors.password}
+                  secureTextEntry
+                  containerStyle={{ marginBottom: 0 }}
+                />
+              </View>
+
+              {password.length > 0 && (
+                <View style={styles.strengthBlock}>
+                  {/* Strength bar */}
+                  <View style={styles.strengthBarBg}>
+                    <View
+                      style={[
+                        styles.strengthBarFill,
+                        {
+                          width: `${((passwordStrength.score + 1) / 5) * 100}%`,
+                          backgroundColor: passwordStrength.color,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  {/* Checklist */}
+                  <View style={styles.checklist}>
+                    <PasswordCheck label="6+ characters" checked={passwordVal.minLength} />
+                    <PasswordCheck label="Uppercase letter" checked={passwordVal.hasUppercase} />
+                    <PasswordCheck label="Lowercase letter" checked={passwordVal.hasLowercase} />
+                  </View>
+                </View>
+              )}
+
+              <Button
+                label="Next →"
+                onPress={goNext}
+                disabled={!name.trim() || !emailVal.valid || !passwordVal.valid}
+                style={{ marginTop: 24 }}
               />
-              <Input
-                label="Password"
-                placeholder="Min. 6 characters"
-                value={password}
-                onChangeText={t => { setPassword(t); setFieldErrors(e => ({...e, password: ''})); }}
-                error={fieldErrors.password}
-                secureTextEntry
-                containerStyle={{ marginBottom: 24 }}
-              />
-              <Button label="Next →" onPress={goNext}/>
             </View>
           )}
 
@@ -280,6 +347,49 @@ const styles = StyleSheet.create({
   stepDotDone:  { backgroundColor: Colors.up },
 
   sectionLabel: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, marginBottom: 10 },
+
+  // Email & Password validation
+  inputBlock: { position: 'relative', marginBottom: 16 },
+  validIcon: {
+    position: 'absolute',
+    right: 12,
+    top: 30,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(107,158,107,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  passwordBlock: { marginBottom: 12 },
+
+  // Password strength
+  strengthBlock: { marginBottom: 16 },
+  strengthBarBg: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.s3,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  strengthBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  checklist: { gap: 8 },
+  checkItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  checkBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.s4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkBoxDone: { borderColor: Colors.up, backgroundColor: 'rgba(107,158,107,0.1)' },
+  checkLabel: { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3 },
+  checkLabelDone: { color: Colors.up, fontFamily: Fonts.semiBold },
 
   // ── Character picker — horizontal scroll, scales to N characters ──
   charScroll: {
