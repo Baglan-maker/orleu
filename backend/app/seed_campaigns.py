@@ -12,7 +12,7 @@ from app.models import Campaign, CampaignChapter
 CAMPAIGNS = [
     {
         "name": "The Foundation",
-        "description": "Your first path in the gym. Build a foundation of strength and training habits.",
+        "description": " Your first path in the gym. Build a foundation of strength and training habits.",
         "order_index": 1,
         "chapters": [
             {
