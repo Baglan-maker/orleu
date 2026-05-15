@@ -1,4 +1,3 @@
-// mobile/components/modals/MissionCompleteModal.tsx
 import { useEffect, useRef } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Polyline, Circle } from 'react-native-svg';

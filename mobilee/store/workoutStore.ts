@@ -1,4 +1,3 @@
-// mobile/store/workoutStore.ts
 import { create } from 'zustand';
 import { workoutApi, WorkoutResponse } from '../services/workoutApi';
 import {

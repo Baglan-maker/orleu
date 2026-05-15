@@ -1,4 +1,3 @@
-# app/ml/features.py
 """
 Feature extraction for the ML model.
 Each function returns a single normalised float in [0, 1].

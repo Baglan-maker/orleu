@@ -1,4 +1,3 @@
-// mobile/components/ui/XpToast.tsx
 /**
  * Animated XP gain toast that appears at the top after a workout.
  * - Slides down with spring overshoot

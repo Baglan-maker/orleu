@@ -1,4 +1,3 @@
-# app/schemas/nutrition.py
 from datetime import date
 from typing import Dict, List, Optional
 from uuid import UUID

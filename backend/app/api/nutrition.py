@@ -1,4 +1,3 @@
-# app/api/nutrition.py
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import List

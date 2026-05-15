@@ -1,4 +1,3 @@
-// mobile/app/paywall.tsx
 import { useState } from 'react';
 import {
   Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View,

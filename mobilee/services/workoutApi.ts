@@ -1,4 +1,3 @@
-// mobile/services/workoutApi.ts
 /**
  * All API calls for exercises and workouts.
  * Each function corresponds to one endpoint on the backend.

@@ -1,4 +1,3 @@
-// mobile/services/storage.ts
 /**
  * Обёртка над expo-secure-store.
  * Хранит токены в зашифрованном хранилище устройства.

@@ -1,4 +1,3 @@
-// mobile/components/ui/EmptyState.tsx
 import { ReactNode } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';

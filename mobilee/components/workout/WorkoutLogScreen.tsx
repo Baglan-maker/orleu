@@ -1,4 +1,3 @@
-// mobile/components/workout/WorkoutLogScreen.tsx
 /**
  * Full-screen workout session modal.
  *

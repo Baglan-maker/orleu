@@ -1,4 +1,3 @@
-// mobile/app/change-password.tsx
 import { useState } from 'react';
 import {
   Alert, ScrollView, StyleSheet, Text,

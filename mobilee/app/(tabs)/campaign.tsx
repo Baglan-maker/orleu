@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/campaign.tsx
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Animated, ScrollView, StyleSheet, Text,

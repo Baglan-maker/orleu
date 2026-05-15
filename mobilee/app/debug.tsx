@@ -1,4 +1,3 @@
-// mobilee/app/debug.tsx
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,

@@ -1,4 +1,3 @@
-# app/models/personal_records.py
 from sqlalchemy import Column, DateTime, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship

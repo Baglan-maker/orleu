@@ -1,4 +1,3 @@
-# app/services/gamification_service.py
 """
 Chapter progression logic for campaign advancement.
 

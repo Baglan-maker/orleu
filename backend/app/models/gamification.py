@@ -1,4 +1,3 @@
-# app/models/gamification.py
 import uuid
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID

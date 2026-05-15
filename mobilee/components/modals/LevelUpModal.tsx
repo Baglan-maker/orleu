@@ -1,4 +1,3 @@
-// mobile/components/modals/LevelUpModal.tsx
 import { useEffect, useRef } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Polygon } from 'react-native-svg';

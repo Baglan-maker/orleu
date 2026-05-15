@@ -1,4 +1,3 @@
-// mobile/components/achievement/AchievementIcon.tsx
 import Svg, { Line, Path, Polygon, Polyline } from 'react-native-svg';
 
 interface Props {

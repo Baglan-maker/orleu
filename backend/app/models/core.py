@@ -1,4 +1,3 @@
-# app/models/core.py
 import uuid
 from sqlalchemy import Column, DateTime
 from sqlalchemy.dialects.postgresql import UUID

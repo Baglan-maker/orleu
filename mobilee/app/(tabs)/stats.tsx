@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/stats.tsx — Unified Profile Page
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated, ActivityIndicator, Dimensions, Image, RefreshControl, ScrollView, StyleSheet, Text,

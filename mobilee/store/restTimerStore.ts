@@ -1,4 +1,3 @@
-// mobile/store/restTimerStore.ts
 /**
  * Global rest-timer state.
  *

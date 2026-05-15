@@ -1,4 +1,3 @@
-// mobile/services/syncWorker.ts
 /**
  * Syncs pending offline workouts to the server.
  * Called on app foreground (AppState 'active') and after successful online submissions.

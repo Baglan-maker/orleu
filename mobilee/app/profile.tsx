@@ -1,4 +1,3 @@
-// mobile/app/profile.tsx
 import { useState } from 'react';
 import {
   Alert, ScrollView, Share, StyleSheet, Switch, Text,

@@ -1,4 +1,3 @@
-// mobile/components/profile/WorkoutHeatmap.tsx
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';

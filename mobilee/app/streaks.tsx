@@ -1,4 +1,3 @@
-// mobile/app/streaks.tsx — Streak detail screen with calendar & chest rewards
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Animated, Easing, ScrollView, StyleSheet, Text,

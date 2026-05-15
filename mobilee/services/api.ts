@@ -1,4 +1,3 @@
-// mobile/services/api.ts
 /**
  * Axios instance с автоматическим:
  * 1. Прикреплением access token к каждому запросу

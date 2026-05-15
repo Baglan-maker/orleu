@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/_layout.tsx
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

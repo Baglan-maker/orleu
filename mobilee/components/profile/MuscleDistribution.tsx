@@ -1,4 +1,3 @@
-// mobile/components/profile/MuscleDistribution.tsx
 import { StyleSheet, Text, View } from 'react-native';
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 

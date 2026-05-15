@@ -1,4 +1,3 @@
-// mobile/components/ui/ProgressBar.tsx
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Colors, Fonts, Radius } from '../../../mobilee/constants/theme';

@@ -1,4 +1,3 @@
-// mobile/app/(auth)/register.tsx
 import { useState } from 'react';
 import {
   Image, KeyboardAvoidingView, Platform, ScrollView,

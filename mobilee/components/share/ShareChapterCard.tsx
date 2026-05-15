@@ -1,4 +1,3 @@
-// mobile/components/share/ShareChapterCard.tsx
 /**
  * Off-screen 1080×1920 (9:16) share artwork rendered to a PNG by
  * `react-native-view-shot` and handed to the native share sheet.

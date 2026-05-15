@@ -1,4 +1,3 @@
-// mobile/constants/theme.ts
 
 export const Colors = {
     // ── Surfaces ──────────────────────────────────────────────────

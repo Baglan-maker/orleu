@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/nutrition.tsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Alert,

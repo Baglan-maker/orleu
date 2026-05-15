@@ -1,4 +1,3 @@
-// mobile/components/ui/Input.tsx
 import { StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle } from 'react-native';
 import { Colors, Fonts, Radius } from '../../../mobilee/constants/theme';
 

@@ -1,4 +1,3 @@
-// mobile/app/onboarding.tsx
 import { useRef, useState, useEffect } from 'react';
 import {
   Animated, Dimensions, FlatList, Image, StyleSheet,

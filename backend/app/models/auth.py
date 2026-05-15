@@ -1,4 +1,3 @@
-# app/models/auth.py
 from sqlalchemy import Boolean, Column, DateTime, SmallInteger, String, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship

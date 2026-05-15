@@ -1,4 +1,3 @@
-# app/seed_achievements.py
 """Seed default achievements into the database."""
 
 from app.db.database import SessionLocal

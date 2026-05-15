@@ -1,4 +1,3 @@
-// mobile/components/modals/StreakFreezeModal.tsx
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';

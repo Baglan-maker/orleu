@@ -1,4 +1,3 @@
-// mobile/services/database.ts
 /**
  * SQLite service — офлайн хранилище для:
  * - Кэша упражнений (exercise_library_cache)

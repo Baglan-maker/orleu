@@ -1,4 +1,3 @@
-// mobile/components/modals/StageUpModal.tsx
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';

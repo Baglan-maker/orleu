@@ -1,4 +1,3 @@
-# app/tasks/mission_reset.py
 """Weekly Monday reset: abandon stale active missions so users start fresh."""
 
 from datetime import datetime, timezone

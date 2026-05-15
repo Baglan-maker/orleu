@@ -1,4 +1,3 @@
-// mobile/app/history.tsx
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   ActivityIndicator, Animated, FlatList, RefreshControl,

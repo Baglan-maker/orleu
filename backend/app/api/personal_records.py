@@ -1,4 +1,3 @@
-# app/api/personal_records.py
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session

@@ -1,4 +1,3 @@
-// mobile/components/ui/BuffToast.tsx
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';

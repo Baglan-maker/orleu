@@ -1,4 +1,3 @@
-// mobile/store/authStore.ts
 /**
  * Zustand store для аутентификации.
  * Хранит: текущего юзера, статус загрузки, методы login/logout/register.
@@ -87,9 +86,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading:  true,  // true при старте — ждём проверки токена
   error:      null,
 
-  // ── init — вызывается при старте приложения ──────────────────
-  // Читает сохранённые данные из SecureStore
-  // Если есть токен и юзер → считаем залогиненным
   init: async () => {
     try {
       const [token, user] = await Promise.all([

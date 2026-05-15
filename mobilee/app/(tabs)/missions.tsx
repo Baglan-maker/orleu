@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/missions.tsx
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text,

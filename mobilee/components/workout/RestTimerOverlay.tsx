@@ -1,4 +1,3 @@
-// mobile/components/workout/RestTimerOverlay.tsx
 /**
  * Floating rest-timer pill rendered at the app root so the countdown is
  * visible on any screen — profile, missions, stats, etc.

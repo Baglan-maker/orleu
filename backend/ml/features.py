@@ -19,10 +19,6 @@ def build_features(user_id: UUID, db: Session) -> dict:
     week_ago      = today - timedelta(days=7)
     two_weeks_ago = today - timedelta(days=14)
 
-    # ── 1. weekly_volume_delta ─────────────────────────────────────────────────
-    # (current_week_volume - prev_week_volume) / prev_week_volume
-    # volume = SUM(sets × reps × weight_kg) for all exercises in the period
-
     def _volume(from_date: date, to_date: date) -> float:
         rows = (
             db.query(WorkoutExercise.sets, WorkoutExercise.reps, WorkoutExercise.weight_kg)
@@ -44,9 +40,6 @@ def build_features(user_id: UUID, db: Session) -> dict:
     else:
         weekly_volume_delta = (vol_current - vol_prev) / vol_prev
 
-    # ── 2. session_frequency ──────────────────────────────────────────────────
-    # number of workouts in last 7 days / 7
-
     sessions_last7: int = (
         db.query(func.count(Workout.id))
         .filter(
@@ -57,10 +50,7 @@ def build_features(user_id: UUID, db: Session) -> dict:
     ) or 0
     session_frequency = sessions_last7 / 7.0
 
-    # ── 3. load_progression ────────────────────────────────────────────────────
-    # avg weight this week / avg weight prev week
-    # Only non-zero weights counted (bodyweight exercises excluded)
-
+    # Only non-zero weights counted (bodyweight exercises excluded).
     def _avg_weight(from_date: date, to_date: date):
         result = (
             db.query(func.avg(WorkoutExercise.weight_kg))
@@ -83,9 +73,6 @@ def build_features(user_id: UUID, db: Session) -> dict:
     else:
         load_progression = avg_w_current / avg_w_prev
 
-    # ── 4. consistency_score ────────────────────────────────────────────────────
-    # distinct workout days in last 14 days / 14
-
     distinct_workout_days: int = (
         db.query(func.count(func.distinct(Workout.workout_date)))
         .filter(
@@ -96,10 +83,8 @@ def build_features(user_id: UUID, db: Session) -> dict:
     ) or 0
     consistency_score = min(distinct_workout_days, 14) / 14.0
 
-    # ── 5. nutrition_consistency ────────────────────────────────────────────────
-    # distinct days with a nutrition log entry in last 14 days / 14
-    # If the user has never logged nutrition at all → 0.5 (neutral, no signal)
-
+    # Users who never log nutrition get 0.5 (neutral) so the model doesn't
+    # treat zero logs as a strong "declining" signal.
     total_nutrition_logs: int = (
         db.query(func.count(NutritionLog.id))
         .filter(NutritionLog.user_id == user_id)

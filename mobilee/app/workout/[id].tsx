@@ -1,4 +1,3 @@
-// mobile/app/workout/[id].tsx
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated, ScrollView, StyleSheet, Text,

@@ -1,4 +1,3 @@
-// mobile/components/workout/ExerciseSearchModal.tsx
 /**
  * Модалка поиска упражнений.
  * 1. Ищет по SQLite кэшу (exercise_library_cache)

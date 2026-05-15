@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/index.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Animated, Dimensions, Image, ScrollView, StyleSheet, Text,

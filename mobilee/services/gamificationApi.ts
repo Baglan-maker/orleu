@@ -1,4 +1,3 @@
-// mobile/services/gamificationApi.ts
 import { api } from './api';
 
 // ─── Types ──────────────────────────────────────────────────────

@@ -26,11 +26,6 @@ MODEL_VERSION = "1.0.0"
 
 
 def run_nightly_predictions() -> int:
-    """
-    Iterates all eligible users, calls predict_trend(), upserts into ml_predictions,
-    and generates a CoachMessage for each.
-    Returns the number of users successfully processed.
-    """
     db: Session = SessionLocal()
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=14)

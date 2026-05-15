@@ -1,4 +1,3 @@
-// mobile/components/modals/ChapterCompleteModal.tsx
 /**
  * Celebration modal when the user completes a campaign chapter.
  * - Big chapter number with scale-in animation

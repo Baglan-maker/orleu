@@ -1,4 +1,3 @@
-// mobile/components/workout/ExerciseCard.tsx
 import React, { useEffect, useState } from 'react';
 import {
   StyleSheet, Text, TextInput,
