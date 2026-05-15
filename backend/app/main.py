@@ -8,6 +8,15 @@ from app.tasks.mission_expiry import expire_overdue_missions
 from app.tasks.mission_reset import weekly_mission_reset
 from app.tasks.nightly_ml import run_nightly_predictions
 
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.APP_ENV,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=False,
+    )
+
 scheduler = BackgroundScheduler()
 
 

@@ -17,7 +17,8 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true

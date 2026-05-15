@@ -13,6 +13,7 @@
     "@expo-google-fonts/outfit": "0.2.3",
     "@expo-google-fonts/plus-jakarta-sans": "0.2.3",
     "@expo/metro-runtime": "~6.1.2",
+    "@sentry/react-native": "~7.2.0",
     "axios": "1.7.7",
     "expo": "~54.0.0",
     "expo-asset": "~12.0.12",

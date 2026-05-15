@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = ""
     ADMIN_PASSWORD: str = ""
 
+    # Sentry error tracking. Empty DSN disables Sentry entirely.
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+
     class Config:
         env_file = ".env"
 

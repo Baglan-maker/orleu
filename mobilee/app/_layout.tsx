@@ -11,6 +11,17 @@ import type { AppStateStatus } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Sentry from '@sentry/react-native';
+
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: __DEV__ ? 'development' : 'production',
+    tracesSampleRate: 0.1,
+    enableAutoSessionTracking: true,
+  });
+}
 
 import {
   useFonts,
@@ -40,7 +51,7 @@ import { RestTimerOverlay }     from '../components/workout/RestTimerOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayout() {
   const { isLoggedIn, isLoading, user, init } = useAuthStore();
   const router   = useRouter();
   const segments = useSegments();
@@ -147,3 +158,5 @@ export default function RootLayout() {
     </View>
   );
 }
+
+export default SENTRY_DSN ? Sentry.wrap(RootLayout) : RootLayout;
