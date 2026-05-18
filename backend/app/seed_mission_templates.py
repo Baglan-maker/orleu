@@ -10,7 +10,7 @@ from app.db.database import SessionLocal
 from app.models import MissionTemplate
 
 TEMPLATES = [
-    # ── Volume missions ──
+    # ── Volume missions (Doc §5: "volume") ──
     {
         "name": "Volume Crusher",
         "type": "total_reps",
@@ -31,7 +31,7 @@ TEMPLATES = [
         "base_coins": 35,
         "duration_days": 7,
     },
-    # ── Consistency missions ──
+    # ── Consistency missions (Doc §5: "consistency") ──
     {
         "name": "Weekly Warrior",
         "type": "workout_count",
@@ -52,7 +52,7 @@ TEMPLATES = [
         "base_coins": 15,
         "duration_days": 7,
     },
-    # ── Muscle-specific missions ──
+    # ── Intensity / muscle-specific missions (Doc §5: "intensity") ──
     {
         "name": "Chest Day Champion",
         "type": "muscle_sets",
@@ -84,7 +84,7 @@ TEMPLATES = [
         "base_coins": 25,
         "duration_days": 7,
     },
-    # ── Variety missions ──
+    # ── Variety missions (Doc §5: "variety") ──
     {
         "name": "Exercise Explorer",
         "type": "unique_exercises",
@@ -95,6 +95,31 @@ TEMPLATES = [
         "base_coins": 22,
         "duration_days": 7,
         "campaign_path_filter": "B",
+    },
+    # ── Additional endurance/variety missions ──
+    # "Movement Variety" fills the gap for path-A users who chose endurance:
+    # Exercise Explorer is path-B locked, leaving them with zero variety missions.
+    {
+        "name": "Movement Variety",
+        "type": "unique_exercises",
+        "description_template": "Use {target} different exercises this week",
+        "base_target": 8,
+        "difficulty_scale": 1.0,
+        "base_xp": 110,
+        "base_coins": 22,
+        "duration_days": 7,
+    },
+    # "Endurance Block" bridges the gap between Comeback (1 session) and
+    # Weekly Warrior (4 sessions/7 days) for endurance-goal users.
+    {
+        "name": "Endurance Block",
+        "type": "workout_count",
+        "description_template": "Complete {target} training sessions over 2 weeks",
+        "base_target": 3,
+        "difficulty_scale": 1.0,
+        "base_xp": 95,
+        "base_coins": 18,
+        "duration_days": 14,
     },
 ]
 

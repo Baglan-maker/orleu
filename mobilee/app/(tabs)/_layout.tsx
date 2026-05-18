@@ -1,4 +1,3 @@
-// mobile/app/(tabs)/_layout.tsx
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,20 +32,29 @@ function IconTarget({ color }: { color: string }) {
     </Svg>
   );
 }
-function IconBarChart({ color }: { color: string }) {
+function IconUser({ color }: { color: string }) {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-      <Line x1="18" y1="20" x2="18" y2="9"/><Line x1="12" y1="20" x2="12" y2="4"/>
-      <Line x1="6"  y1="20" x2="6"  y2="13"/><Line x1="2" y1="20" x2="22" y2="20"/>
+      <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <Circle cx="12" cy="7" r="4" />
+    </Svg>
+  );
+}
+function IconLeaf({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 2C7 2 3 6 3 11c0 4 2.5 7.5 6 9.5C10.5 22 12 22 12 22s1.5 0 3-1.5C18.5 18.5 21 15 21 11c0-5-4-9-9-9z" stroke={color} strokeWidth={1.6} fill="none"/>
+      <Path d="M12 2 Q12 12 8 18" stroke={color} strokeWidth={1.6} fill="none" strokeLinecap="round"/>
     </Svg>
   );
 }
 
 const TABS = [
-  { name: 'index',    label: 'Log',      Icon: IconDumbbell },
-  { name: 'campaign', label: 'Map',      Icon: IconMap      },
-  { name: 'missions', label: 'Missions', Icon: IconTarget   },
-  { name: 'stats',    label: 'Stats',    Icon: IconBarChart },
+  { name: 'index',     label: 'Log',      Icon: IconDumbbell },
+  { name: 'campaign',  label: 'Map',      Icon: IconMap      },
+  { name: 'missions',  label: 'Missions', Icon: IconTarget   },
+  { name: 'nutrition', label: 'Food',     Icon: IconLeaf     },
+  { name: 'stats',     label: 'Profile',  Icon: IconUser },
 ] as const;
 
 // ─── Кастомный tab bar ────────────────────────────────────────────
@@ -87,6 +95,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index"/>
       <Tabs.Screen name="campaign"/>
       <Tabs.Screen name="missions"/>
+      <Tabs.Screen name="nutrition"/>
       <Tabs.Screen name="stats"/>
     </Tabs>
   );

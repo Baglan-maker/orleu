@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List, Literal
 from uuid import UUID
-from datetime import datetime
+from datetime import date, datetime
 
 
 # ─── Achievements ─────────────────────────────────────────────────
@@ -10,8 +10,23 @@ class AchievementOut(BaseModel):
     id:        UUID
     name:      str
     icon_key:  str
+    rarity:    str = 'common'
     earned:    bool
     earned_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AchievementFullOut(BaseModel):
+    id:              UUID
+    name:            str
+    description:     str
+    icon_key:        str
+    condition_type:  str
+    condition_value: int
+    rarity:          str = 'common'
+    earned:           bool
+    earned_at:        Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -19,21 +34,27 @@ class AchievementOut(BaseModel):
 # ─── Progress ────────────────────────────────────────────────────
 
 class ProgressOut(BaseModel):
-    user_id:             UUID
-    xp:                  int
-    level:               int
-    coins:               int
-    current_streak:      int
-    longest_streak:      int
-    current_campaign_id: Optional[UUID] = None
-    current_chapter_id:  Optional[UUID] = None
-    campaign_path:       Optional[str] = None
-    last_workout_at:     Optional[datetime] = None
-    updated_at:          Optional[datetime] = None
-    total_sessions:      int = 0
-    avatar_stage:        int = 0
-    avatar_stage_name:   str = "Rookie"
-    achievements:        List[AchievementOut] = []
+    user_id:                 UUID
+    xp:                      int
+    level:                   int
+    coins:                   int
+    current_streak:          int
+    longest_streak:          int
+    streak_freezes:          int = 0
+    nutrition_buff_date:     Optional[date] = None  # ISO date when the +5% XP buff applies
+    current_campaign_id:     Optional[UUID] = None
+    current_chapter_id:      Optional[UUID] = None
+    campaign_path:           Optional[str] = None
+    last_workout_at:         Optional[datetime] = None
+    updated_at:              Optional[datetime] = None
+    total_sessions:             int = 0
+    total_workouts:             int = 0
+    missions_completed_count:   int = 0
+    campaign_started_workouts:  int = 0
+    campaign_started_missions:  int = 0
+    avatar_stage:            int = 0
+    avatar_stage_name:       str = "Rookie"
+    achievements:            List[AchievementOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -66,6 +87,40 @@ class ChapterOut(BaseModel):
     has_branch:     bool
     branch_a_label: Optional[str] = None
     branch_b_label: Optional[str] = None
+    reward_xp:      int = 0
+    reward_coins:   int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class ChapterRequirementOut(BaseModel):
+    label:   str
+    current: float
+    target:  float
+    met:     bool
+
+
+class ChapterWithStatusOut(BaseModel):
+    id:             UUID
+    chapter_number: int
+    title:          str
+    status:         str   # "completed" | "active" | "locked"
+    has_branch:     bool
+    narrative_text: Optional[str] = None
+    branch_a_label: Optional[str] = None
+    branch_b_label: Optional[str] = None
+    reward_xp:      int = 0
+    reward_coins:   int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class CampaignCurrentOut(BaseModel):
+    campaign:        CampaignOut
+    current_chapter: Optional[ChapterOut] = None
+    chapters:        List[ChapterWithStatusOut]
+    campaign_path:   Optional[str] = None
+    requirements:    List[ChapterRequirementOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -76,8 +131,10 @@ class MissionTemplateOut(BaseModel):
     id:                   UUID
     name:                 str
     type:                 str
+    category:             str = ""  # Doc §5 category: volume, consistency, intensity, variety
     description_template: str
     base_target:          float
+    preview_target:       float = 0.0  # experience-scaled target at level 1, set by get_missions
     base_xp:              int
     base_coins:           int
     duration_days:        int
@@ -105,4 +162,14 @@ class UserMissionOut(BaseModel):
 
 class AvailableMissionsOut(BaseModel):
     active:    List[UserMissionOut]
+    completed: List[UserMissionOut] = []
+    expired:   List[UserMissionOut] = []
     available: List[MissionTemplateOut]
+    # ML trend used to order `available`; null if user is in cold-start.
+    # improving → hardest first, declining → easiest first, plateau → unsorted.
+    trend:     Optional[str] = None
+    # Reroll status — surface so the UI can disable/enable the "swap" button
+    # and show coin cost + cooldown without an extra round-trip.
+    reroll_available: bool = True
+    reroll_cost:      int = 0
+    next_reroll_at:   Optional[datetime] = None

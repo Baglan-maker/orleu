@@ -1,4 +1,3 @@
-# app/tasks/mission_expiry.py
 """Mark overdue active missions as 'expired'."""
 
 from datetime import datetime, timezone

@@ -17,10 +17,18 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2b7e4260-dfb8-4a84-af56-30d32badd5da"
+      }
+    },
+    "owner": "shinpoky"
   }
 }

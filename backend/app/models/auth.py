@@ -1,4 +1,3 @@
-# app/models/auth.py
 from sqlalchemy import Boolean, Column, DateTime, SmallInteger, String, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -31,6 +30,9 @@ class User(Base):
     achievements     = relationship("UserAchievement", back_populates="user", cascade="all, delete-orphan")
     skill_nodes      = relationship("UserSkillTree",   back_populates="user", cascade="all, delete-orphan")
     custom_exercises = relationship("ExerciseLibrary", back_populates="creator")
+    custom_foods     = relationship("FoodItem",        back_populates="creator")
+    nutrition_logs   = relationship("NutritionLog",    back_populates="user", cascade="all, delete-orphan")
+    nutrition_goals  = relationship("UserNutritionGoals", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.email}>"

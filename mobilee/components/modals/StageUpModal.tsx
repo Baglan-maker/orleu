@@ -1,9 +1,7 @@
-// mobile/components/modals/StageUpModal.tsx
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Colors, Fonts, Radius, AvatarThemes, type AvatarThemeId, type AvatarStage } from '../../constants/theme';
-import { AvatarSVG } from '../avatar/AvatarSVG';
+import { Colors, Fonts, Radius, AvatarThemes, getCharacterImage, type AvatarThemeId, type AvatarStage } from '../../constants/theme';
 
 const STAGE_NAMES: Record<AvatarStage, string> = {
   0: 'Rookie',
@@ -69,50 +67,28 @@ function Particle({ angle, radius, color, delay }: {
 }
 
 export function StageUpModal({ visible, stage, themeId, onClose }: Props) {
-  const scale    = useRef(new Animated.Value(0.55)).current;
-  const opacity  = useRef(new Animated.Value(0)).current;
-  const avatarY  = useRef(new Animated.Value(24)).current;
-  const glowAnim = useRef(new Animated.Value(0)).current;
+  const scale   = useRef(new Animated.Value(0.55)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const avatarY = useRef(new Animated.Value(24)).current;
 
   const color = AvatarThemes[themeId].color;
 
   useEffect(() => {
     if (!visible) return;
-
     scale.setValue(0.55);
     opacity.setValue(0);
     avatarY.setValue(24);
-    glowAnim.setValue(0);
-
     Animated.parallel([
       Animated.spring(scale,   { toValue: 1, tension: 50, friction: 8, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       Animated.spring(avatarY, { toValue: 0, tension: 55, friction: 9, useNativeDriver: true }),
     ]).start();
-
-    const glowLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])
-    );
-    glowLoop.start();
-    return () => glowLoop.stop();
   }, [visible]);
-
-  const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.12, 0.32] });
-  const glowScale   = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View style={[s.overlay, { opacity }]}>
         <Animated.View style={[s.card, { transform: [{ scale }] }]}>
-
-          {/* Pulsing glow ring */}
-          <Animated.View style={[
-            s.glowRing,
-            { borderColor: color, opacity: glowOpacity, transform: [{ scale: glowScale }] },
-          ]}/>
 
           {/* Orbiting particles */}
           <Particle angle={0}   radius={68} color={color} delay={0}   />
@@ -122,7 +98,7 @@ export function StageUpModal({ visible, stage, themeId, onClose }: Props) {
           <Text style={s.eyebrow}>STAGE UNLOCKED</Text>
 
           <Animated.View style={[s.avatarWrap, { transform: [{ translateY: avatarY }] }]}>
-            <AvatarSVG themeId={themeId} stage={stage} size={100} celebrating />
+            <Image source={getCharacterImage(themeId, stage)} style={s.characterImg} />
           </Animated.View>
 
           <Text style={[s.stageName, { color }]}>{STAGE_NAMES[stage]}</Text>
@@ -146,30 +122,19 @@ export function StageUpModal({ visible, stage, themeId, onClose }: Props) {
 const s = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8,8,9,0.92)',
+    backgroundColor: Colors.overlay,
     alignItems: 'center',
     justifyContent: 'center',
   },
   card: {
     backgroundColor: Colors.s2,
     borderRadius: Radius.xxl,
-    borderWidth: 1,
-    borderColor: Colors.lineH,
+    borderWidth: 1.5,
+    borderColor: '#4A7FC1',
     padding: 36,
     alignItems: 'center',
     width: 300,
     overflow: 'hidden',
-  },
-  glowRing: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    borderWidth: 28,
-    top: '50%',
-    left: '50%',
-    marginTop: -110,
-    marginLeft: -110,
   },
   eyebrow: {
     fontSize: 10,
@@ -183,6 +148,11 @@ const s = StyleSheet.create({
   avatarWrap: {
     marginVertical: 12,
     zIndex: 1,
+  },
+  characterImg: {
+    width: 120,
+    height: 120,
+    resizeMode: 'contain',
   },
   stageName: {
     fontSize: 36,

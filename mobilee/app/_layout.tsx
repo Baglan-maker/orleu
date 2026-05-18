@@ -1,4 +1,3 @@
-// mobile/app/_layout.tsx
 /**
  * Root layout — самый верхний файл приложения.
  * 1. Загружаем шрифты
@@ -6,11 +5,23 @@
  * 3. Синкаем exercise library при первом входе
  * 4. Редиректим: onboarding → (tabs) | (auth)
  */
-import { useEffect } from 'react';
-import { View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AppState, View } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Sentry from '@sentry/react-native';
+
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: __DEV__ ? 'development' : 'production',
+    tracesSampleRate: 0.1,
+    enableAutoSessionTracking: true,
+  });
+}
 
 import {
   useFonts,
@@ -32,12 +43,15 @@ import {
 } from '@expo-google-fonts/jetbrains-mono';
 
 import { useAuthStore }         from '../store/authStore';
+import { useRestTimerStore }    from '../store/restTimerStore';
 import { syncExerciseLibrary }  from '../services/exerciseSync';
+import { syncPendingWorkouts }  from '../services/syncWorker';
 import { Colors }               from '../constants/theme';
+import { RestTimerOverlay }     from '../components/workout/RestTimerOverlay';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayout() {
   const { isLoggedIn, isLoading, user, init } = useAuthStore();
   const router   = useRouter();
   const segments = useSegments();
@@ -59,6 +73,17 @@ export default function RootLayout() {
     init();
   }, []);
 
+  // Single global tick for the rest timer — driven here so the countdown
+  // keeps running no matter which screen is mounted. Reads `running` from
+  // the store and starts/stops the interval reactively.
+  const restRunning = useRestTimerStore(s => s.running);
+  const restTick    = useRestTimerStore(s => s.tick);
+  useEffect(() => {
+    if (!restRunning) return;
+    const id = setInterval(restTick, 1000);
+    return () => clearInterval(id);
+  }, [restRunning, restTick]);
+
   // Скрываем splash когда шрифты + auth готовы
   useEffect(() => {
     if ((fontsLoaded || fontError) && !isLoading) {
@@ -71,6 +96,23 @@ export default function RootLayout() {
     if (isLoggedIn) {
       syncExerciseLibrary().catch(() => {});
     }
+  }, [isLoggedIn]);
+
+  // Sync pending offline workouts when app comes to foreground
+  const appState = useRef(AppState.currentState);
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    // Sync immediately on mount (app just opened while logged in)
+    syncPendingWorkouts();
+
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        syncPendingWorkouts();
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, [isLoggedIn]);
 
   // ── Auth guard ─────────────────────────────────────────────────
@@ -106,9 +148,15 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)"      options={{ animation: 'fade' }}/>
         <Stack.Screen name="onboarding"  options={{ animation: 'fade', gestureEnabled: false }}/>
         <Stack.Screen name="history"       options={{ animation: 'slide_from_right' }}/>
+        <Stack.Screen name="streaks"       options={{ animation: 'slide_from_right' }}/>
         <Stack.Screen name="profile"       options={{ animation: 'slide_from_right' }}/>
+        <Stack.Screen name="paywall"       options={{ animation: 'slide_from_bottom', presentation: 'modal' }}/>
         <Stack.Screen name="workout/[id]"  options={{ animation: 'slide_from_right' }}/>
       </Stack>
+      {/* Floating rest-timer pill — visible on every screen while a rest is running */}
+      <RestTimerOverlay/>
     </View>
   );
 }
+
+export default SENTRY_DSN ? Sentry.wrap(RootLayout) : RootLayout;

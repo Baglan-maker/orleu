@@ -1,61 +1,114 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import List
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
-import math
 
 from app.db.database import get_db
-from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, UserAchievement, Campaign, CampaignChapter
+from app.models import User, Workout, ExerciseLibrary, UserProgress, UserMission, Achievement, PersonalRecord, PersonalRecordHistory, UserAchievement
 from app.models.workout import WorkoutExercise
+from sqlalchemy import func
 from app.schemas.workout import (
-    WorkoutCreate, WorkoutOut, WorkoutExerciseOut,
-    WorkoutListItem, WorkoutListResponse, AchievementEarned,
+    WorkoutCreate, WorkoutOut, WorkoutExerciseOut, SetEntry,
+    WorkoutListItem, WorkoutListResponse, AchievementEarned, PROut,
+    ChapterCompletedOut,
 )
 from app.services.dependencies import get_current_user
+from app.services.gamification_service import try_advance_chapter, check_and_award_achievements, check_and_update_prs
 
 router = APIRouter()
 
-
-# ── Campaign constants ─────────────────────────────────────────────────────────
-SESSIONS_PER_CHAPTER = 2   # chapters unlock every 2 completed sessions
 
 # ── XP / leveling constants ────────────────────────────────────────────────────
 BASE_XP_PER_WORKOUT = 50
 XP_PER_EXERCISE     = 10
 XP_PER_1000KG_VOL   = 15
-XP_FOR_LEVEL        = lambda lvl: int(100 * (1.15 ** (lvl - 1)))
+MAX_LEVEL           = 5
+# XP required to complete each level (index 0 = level 1 → 2, etc.)
+# Must stay in sync with mobilee/constants/theme.ts xpForLevel()
+_XP_THRESHOLDS      = [500, 1_500, 4_000, 9_000]
+
+
+def _recalculate_level(total_xp: int) -> int:
+    """Derive level (1–5) from cumulative XP. Capped at MAX_LEVEL."""
+    xp = total_xp
+    level = 1
+    for threshold in _XP_THRESHOLDS:
+        if xp >= threshold:
+            xp -= threshold
+            level += 1
+        else:
+            break
+    return min(level, MAX_LEVEL)
 
 
 def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExercise]):
     """Award XP, update streak, check level-up after a workout."""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
+    # Lock the progress row for the entire gamification transaction to prevent
+    # concurrent workout submissions from causing double XP/level/streak awards.
+    progress = (
+        db.query(UserProgress)
+        .filter(UserProgress.user_id == user_id)
+        .with_for_update()
+        .first()
+    )
     if not progress:
         return None
 
-    # Calculate XP
-    total_volume = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+    # Calculate XP — use sets_data when available for accurate volume
+    def _exercise_volume(e: WorkoutExercise) -> float:
+        if e.sets_data:
+            try:
+                rows = json.loads(e.sets_data)
+                return sum(r["reps"] * r["weight_kg"] for r in rows)
+            except (json.JSONDecodeError, TypeError, KeyError):
+                pass  # fall through to legacy fields
+        return e.sets * e.reps * e.weight_kg
+
+    total_volume = sum(_exercise_volume(e) for e in exercises)
     xp_gained = (
         BASE_XP_PER_WORKOUT
         + len(exercises) * XP_PER_EXERCISE
         + int(total_volume / 1000) * XP_PER_1000KG_VOL
     )
 
-    # Update streak — doc: increment if last workout was yesterday or today, reset otherwise
+    # Nutrition buff: if the user hit yesterday's protein goal, today's first
+    # workout earns +5% XP. Consume the buff so subsequent workouts today don't
+    # get it.
+    today_date = datetime.now(timezone.utc).date()
+    if progress.nutrition_buff_date == today_date:
+        xp_gained = int(round(xp_gained * 1.05))
+        progress.nutrition_buff_date = None
+
+    # Update streak — grace period: streak survives up to 2 rest days, resets on 3+
+    # unless the user has streak freezes to spend. Each owned freeze covers one
+    # extra missed day beyond the 2-day grace window.
     now = datetime.now(timezone.utc)
     if progress.last_workout_at:
         days_gap = (now.date() - progress.last_workout_at.date()).days
         if days_gap == 0:
             pass  # same day — streak unchanged
-        elif days_gap == 1:
-            progress.current_streak += 1  # consecutive day
+        elif days_gap <= 2:
+            progress.current_streak = (progress.current_streak or 0) + 1  # within grace period — keep streak
         else:
-            progress.current_streak = 1  # gap > 1 day — reset
+            extra_days = days_gap - 2  # days beyond the natural 2-day grace
+            owned = progress.streak_freezes or 0
+            if owned >= extra_days:
+                progress.streak_freezes = owned - extra_days
+                progress.current_streak = (progress.current_streak or 0) + 1
+            else:
+                # Not enough freezes — burn what we have and reset.
+                progress.streak_freezes = 0
+                progress.current_streak = 1
     else:
         progress.current_streak = 1
 
-    progress.longest_streak = max(progress.longest_streak, progress.current_streak)
-    progress.last_workout_at = now
+    progress.longest_streak  = max(progress.longest_streak or 0, progress.current_streak)
+    # Store as midnight UTC for consistent date-gap calculations
+    progress.last_workout_at = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+    progress.total_workouts  = (progress.total_workouts or 0) + 1
 
     # Award XP and check level-up
     old_level = progress.level
@@ -63,11 +116,7 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     progress.coins += 10  # base coins per workout
 
     # Recalculate level
-    xp_remaining = progress.xp
-    new_level = 1
-    while xp_remaining >= XP_FOR_LEVEL(new_level):
-        xp_remaining -= XP_FOR_LEVEL(new_level)
-        new_level += 1
+    new_level = _recalculate_level(progress.xp)
     progress.level = new_level
 
     leveled_up = new_level > old_level
@@ -78,11 +127,53 @@ def _award_xp_and_streak(db: Session, user_id: UUID, exercises: list[WorkoutExer
     return {"xp_gained": xp_gained, "new_level": new_level, "leveled_up": leveled_up}
 
 
+# Doc §5 category mapping: internal type → doc category name
+MISSION_TYPE_CATEGORY: dict[str, str] = {
+    "total_reps":       "volume",
+    "total_volume":     "volume",
+    "workout_count":    "consistency",
+    "muscle_sets":      "intensity",
+    "unique_exercises": "variety",
+}
+
+
+_MUSCLE_GROUP_KEYWORDS: list[tuple[str, str]] = [
+    ("chest", "chest"),
+    ("back", "back"),
+    ("shoulder", "shoulders"),
+    ("arm", "arms"),
+    ("leg", "legs"),
+    ("core", "core"),
+    ("full body", "full_body"),
+]
+
+
+def _extract_muscle_group(description_template: str) -> str | None:
+    """Extract target muscle group from description like 'Complete {target} chest sets this week'."""
+    lower = description_template.lower()
+    for keyword, group in _MUSCLE_GROUP_KEYWORDS:
+        if keyword in lower:
+            return group
+    return None
+
+
+def _sets_data_reps(e: WorkoutExercise) -> int:
+    """Total reps across all sets, using sets_data when available."""
+    if e.sets_data:
+        try:
+            rows = json.loads(e.sets_data)
+            return sum(r["reps"] for r in rows)
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+    return e.sets * e.reps
+
+
 def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume: float):
     """Update active user missions based on the completed workout."""
     now = datetime.now(timezone.utc)
     active_missions = (
         db.query(UserMission)
+        .with_for_update()
         .filter(
             UserMission.user_id == user_id,
             UserMission.status == "active",
@@ -100,112 +191,62 @@ def _progress_missions(db: Session, user_id: UUID, exercises: list, total_volume
         if tmpl.type == "workout_count":
             delta = 1
         elif tmpl.type == "total_reps":
-            delta = sum(e.sets * e.reps for e in exercises)
+            delta = sum(_sets_data_reps(e) for e in exercises)
         elif tmpl.type == "total_volume":
             delta = total_volume
         elif tmpl.type == "unique_exercises":
             delta = len(set(str(e.exercise_id) for e in exercises))
         elif tmpl.type == "muscle_sets":
-            # Count sets across all exercises (simplified — all muscle groups)
-            delta = sum(e.sets for e in exercises)
+            # Extract target muscle from description_template, e.g. "Complete {target} chest sets this week"
+            target_muscle = _extract_muscle_group(tmpl.description_template)
+            if target_muscle:
+                delta = sum(
+                    e.sets for e in exercises
+                    if e.exercise and e.exercise.muscle_group
+                    and e.exercise.muscle_group.lower() == target_muscle
+                )
+            else:
+                delta = sum(e.sets for e in exercises)
 
         um.current_progress += delta
         if um.current_progress >= um.adjusted_target and um.status == "active":
             um.status = "completed"
             um.completed_at = now
-            # Award mission XP and coins
+            # Award mission XP and coins, then recalculate level
             progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
             if progress:
-                um.xp_awarded = tmpl.base_xp
+                um.xp_awarded    = tmpl.base_xp
                 um.coins_awarded = tmpl.base_coins
                 progress.xp += tmpl.base_xp
                 progress.coins += tmpl.base_coins
+                progress.missions_completed_count = (progress.missions_completed_count or 0) + 1
+                # Recalculate level after mission XP
+                progress.level = _recalculate_level(progress.xp)
 
 
-def _check_achievements(db: Session, user_id: UUID) -> list[Achievement]:
-    """Check all achievements against user stats, award any newly earned ones."""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
-    if not progress:
-        return []
-
-    # Already earned achievement IDs
-    earned_ids = {
-        row.achievement_id
-        for row in db.query(UserAchievement.achievement_id)
-        .filter(UserAchievement.user_id == user_id)
-        .all()
-    }
-
-    # Precompute stats used by condition_type
-    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
-    missions_completed = (
-        db.query(UserMission)
-        .filter(UserMission.user_id == user_id, UserMission.status == "completed")
-        .count()
-    )
-
-    stats = {
-        "streak_days":        progress.current_streak,
-        "total_sessions":     total_sessions,
-        "missions_completed": missions_completed,
-        # pr_count requires comparing exercise weights — simplified: count workouts with new max
-        "pr_count":           0,  # TODO: implement PR tracking if needed
-    }
-
-    all_achievements = db.query(Achievement).all()
-    newly_earned: list[Achievement] = []
-
-    for ach in all_achievements:
-        if ach.id in earned_ids:
-            continue
-        user_value = stats.get(ach.condition_type, 0)
-        if user_value >= ach.condition_value:
-            db.add(UserAchievement(user_id=user_id, achievement_id=ach.id))
-            newly_earned.append(ach)
-
-    return newly_earned
-
-
-def _advance_campaign_chapter(db: Session, user_id: UUID):
-    """Auto-assign campaign and advance chapter based on total sessions."""
-    progress = db.query(UserProgress).filter(UserProgress.user_id == user_id).first()
-    if not progress:
-        return
-
-    # Assign first active campaign if user has none
-    if not progress.current_campaign_id:
-        first = (
-            db.query(Campaign)
-            .filter(Campaign.is_active == True)
-            .order_by(Campaign.order_index)
-            .first()
-        )
-        if not first:
-            return
-        progress.current_campaign_id = first.id
-
-    chapters = (
-        db.query(CampaignChapter)
-        .filter(CampaignChapter.campaign_id == progress.current_campaign_id)
-        .order_by(CampaignChapter.chapter_number)
-        .all()
-    )
-    if not chapters:
-        return
-
-    total_sessions = db.query(Workout).filter(Workout.user_id == user_id).count()
-    chapter_idx = min((total_sessions - 1) // SESSIONS_PER_CHAPTER, len(chapters) - 1)
-    target = chapters[chapter_idx]
-
-    if progress.current_chapter_id is None:
-        progress.current_chapter_id = target.id
-    else:
-        current = next((c for c in chapters if c.id == progress.current_chapter_id), None)
-        if current is None or target.chapter_number > current.chapter_number:
-            progress.current_chapter_id = target.id
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_sets_data(we: WorkoutExercise) -> list[SetEntry] | None:
+    if not we.sets_data:
+        return None
+    try:
+        rows = json.loads(we.sets_data)
+        return [SetEntry(**r) for r in rows]
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return None
+
+
+def _exercise_total_volume(we: WorkoutExercise) -> float:
+    if we.sets_data:
+        try:
+            rows = json.loads(we.sets_data)
+            return round(sum(r["reps"] * r["weight_kg"] for r in rows), 2)
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+    return round(we.sets * we.reps * we.weight_kg, 2)
+
 
 def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
     return WorkoutExerciseOut(
@@ -216,9 +257,10 @@ def _to_exercise_out(we: WorkoutExercise) -> WorkoutExerciseOut:
         sets=we.sets,
         reps=we.reps,
         weight_kg=we.weight_kg,
+        sets_data=_parse_sets_data(we),
         notes=we.notes,
         order_index=we.order_index,
-        total_volume=round(we.sets * we.reps * we.weight_kg, 2),
+        total_volume=_exercise_total_volume(we),
     )
 
 
@@ -241,6 +283,8 @@ def _to_workout_out(
         new_level=gam.get("new_level"),
         leveled_up=gam.get("leveled_up", False),
         achievements=gam.get("achievements", []),
+        new_prs=gam.get("new_prs", []),
+        chapter_completed=gam.get("chapter_completed"),
         created_at=workout.created_at,
         updated_at=workout.updated_at,
     )
@@ -298,12 +342,18 @@ def create_workout(
     db.flush()
 
     for item in payload.exercises:
+        sd = item.sets_data or []
+        computed_sets     = len(sd)
+        computed_reps     = max((s.reps for s in sd), default=1)
+        computed_weight   = max((s.weight_kg for s in sd), default=0.0)
+        sets_data_json    = json.dumps([s.model_dump() for s in sd]) if sd else None
         db.add(WorkoutExercise(
             workout_id=workout.id,
             exercise_id=item.exercise_id,
-            sets=item.sets,
-            reps=item.reps,
-            weight_kg=item.weight_kg,
+            sets=computed_sets,
+            reps=computed_reps,
+            weight_kg=computed_weight,
+            sets_data=sets_data_json,
             notes=item.notes,
             order_index=item.order_index,
         ))
@@ -313,20 +363,36 @@ def create_workout(
     # Award XP, update streak, progress missions
     workout_exercises = (
         db.query(WorkoutExercise)
+        .options(joinedload(WorkoutExercise.exercise))
         .filter(WorkoutExercise.workout_id == workout.id)
         .all()
     )
     reward = _award_xp_and_streak(db, current_user.id, workout_exercises)
+    db.flush()
+
+    # Check and update personal records
+    pr_results = check_and_update_prs(current_user.id, workout_exercises, db)
 
     # Check achievements after all stats are updated
-    newly_earned = _check_achievements(db, current_user.id)
-
-    # Auto-advance campaign chapter
-    _advance_campaign_chapter(db, current_user.id)
+    newly_earned = check_and_award_achievements(current_user.id, db)
 
     db.commit()
     workout.exercises = _load_with_exercises(db, workout.id)
     db.refresh(workout)
+
+    # Re-fetch progress so SQLAlchemy identity map is cleared before chapter check
+    db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
+    # Advance campaign chapter (separate commit inside try_advance_chapter)
+    chapter_result = try_advance_chapter(current_user.id, db)
+
+    chapter_completed = None
+    if chapter_result.get("advanced") and chapter_result.get("chapter_number"):
+        chapter_completed = ChapterCompletedOut(
+            chapter_number=chapter_result["chapter_number"],
+            xp=chapter_result.get("xp", 0),
+            coins=chapter_result.get("coins", 0),
+            campaign_complete=chapter_result.get("campaign_complete", False),
+        )
 
     gamification = {
         **(reward or {}),
@@ -337,6 +403,17 @@ def create_workout(
             )
             for a in newly_earned
         ],
+        "new_prs": [
+            PROut(
+                exercise_id=pr.exercise_id,
+                exercise_name=pr.exercise_name,
+                new_weight=pr.new_weight,
+                prev_weight=pr.prev_weight,
+                delta=pr.delta,
+            )
+            for pr in pr_results
+        ],
+        "chapter_completed": chapter_completed,
     }
     return _to_workout_out(workout, gamification=gamification)
 
@@ -360,7 +437,7 @@ def list_workouts(
     items = []
     for w in rows:
         exercises = db.query(WorkoutExercise).filter(WorkoutExercise.workout_id == w.id).all()
-        vol = sum(e.sets * e.reps * e.weight_kg for e in exercises)
+        vol = sum(_exercise_total_volume(e) for e in exercises)
         items.append(WorkoutListItem(
             id=w.id,
             workout_date=w.workout_date,
@@ -385,6 +462,107 @@ def get_workout(
     return _to_workout_out(workout)
 
 
+def _reverse_mission_progress(
+    db: Session,
+    user_id: UUID,
+    exercises: list[WorkoutExercise],
+    total_volume: float,
+    progress: UserProgress,
+):
+    """Reverse the mission progress that this workout contributed."""
+    now = datetime.now(timezone.utc)
+
+    # Find missions that were active or completed recently
+    # (completed missions could have been completed by THIS workout)
+    affected_missions = (
+        db.query(UserMission)
+        .filter(
+            UserMission.user_id == user_id,
+            UserMission.status.in_(["active", "completed"]),
+        )
+        .all()
+    )
+
+    for um in affected_missions:
+        tmpl = um.template
+        if not tmpl:
+            continue
+
+        delta = 0.0
+        if tmpl.type == "workout_count":
+            delta = 1
+        elif tmpl.type == "total_reps":
+            delta = sum(_sets_data_reps(e) for e in exercises)
+        elif tmpl.type == "total_volume":
+            delta = total_volume
+        elif tmpl.type == "unique_exercises":
+            delta = len(set(str(e.exercise_id) for e in exercises))
+        elif tmpl.type == "muscle_sets":
+            target_muscle = _extract_muscle_group(tmpl.description_template)
+            if target_muscle:
+                delta = sum(
+                    e.sets for e in exercises
+                    if e.exercise and e.exercise.muscle_group
+                    and e.exercise.muscle_group.lower() == target_muscle
+                )
+            else:
+                delta = sum(e.sets for e in exercises)
+
+        if delta == 0:
+            continue
+
+        was_completed = um.status == "completed"
+        um.current_progress = max(0, um.current_progress - delta)
+
+        # If mission was completed but now falls below target, re-open it
+        if was_completed and um.current_progress < um.adjusted_target:
+            um.status = "active"
+            um.completed_at = None
+            # Reverse mission completion rewards
+            if progress:
+                progress.xp = max(0, (progress.xp or 0) - (um.xp_awarded or tmpl.base_xp))
+                progress.coins = max(0, (progress.coins or 0) - (um.coins_awarded or tmpl.base_coins))
+                progress.missions_completed_count = max(0, (progress.missions_completed_count or 0) - 1)
+            um.xp_awarded = None
+            um.coins_awarded = None
+
+
+def _reverse_prs(
+    db: Session,
+    user_id: UUID,
+    exercises: list[WorkoutExercise],
+    workout_id: UUID,
+):
+    """Recalculate personal records if the deleted workout held the best weight."""
+    exercise_ids = {e.exercise_id for e in exercises if e.weight_kg and e.weight_kg > 0}
+    for eid in exercise_ids:
+        pr = db.query(PersonalRecord).filter_by(user_id=user_id, exercise_id=eid).first()
+        if not pr:
+            continue
+
+        # Find the best weight across all REMAINING workouts for this exercise
+        best_remaining = (
+            db.query(func.max(WorkoutExercise.weight_kg))
+            .join(Workout, Workout.id == WorkoutExercise.workout_id)
+            .filter(
+                Workout.user_id == user_id,
+                Workout.id != workout_id,
+                WorkoutExercise.exercise_id == eid,
+            )
+            .scalar()
+        )
+
+        if best_remaining is None or best_remaining <= 0:
+            # No other workouts with this exercise — delete the PR
+            db.query(PersonalRecordHistory).filter_by(
+                user_id=user_id, exercise_id=eid
+            ).delete()
+            db.delete(pr)
+        elif best_remaining < pr.weight_kg:
+            # PR was from the deleted workout — downgrade to next best
+            pr.weight_kg = best_remaining
+
+
 @router.delete("/{workout_id}", status_code=204)
 def delete_workout(
     workout_id: UUID,
@@ -392,5 +570,76 @@ def delete_workout(
     current_user: User = Depends(get_current_user),
 ):
     workout = _get_own_workout(db, workout_id, current_user.id)
+    exercises = _load_with_exercises(db, workout_id)
+
+    # Reverse gamification side effects
+    progress = db.query(UserProgress).filter(UserProgress.user_id == current_user.id).first()
+    if progress:
+        # 1. Reverse XP from this workout
+        total_volume = sum(_exercise_total_volume(e) for e in exercises)
+        xp_to_remove = (
+            BASE_XP_PER_WORKOUT
+            + len(exercises) * XP_PER_EXERCISE
+            + int(total_volume / 1000) * XP_PER_1000KG_VOL
+        )
+        progress.xp = max(0, (progress.xp or 0) - xp_to_remove)
+        progress.coins = max(0, (progress.coins or 0) - 10)  # reverse base coins
+
+        # 2. Recalculate level from new XP
+        progress.level = _recalculate_level(progress.xp)
+
+        # 3. Decrement total_workouts
+        progress.total_workouts = max(0, (progress.total_workouts or 0) - 1)
+
+        # 4. Recalculate streak from remaining workouts
+        remaining_workouts = (
+            db.query(Workout)
+            .filter(Workout.user_id == current_user.id, Workout.id != workout_id)
+            .order_by(Workout.workout_date.desc())
+            .all()
+        )
+        if remaining_workouts:
+            progress.last_workout_at = datetime.combine(
+                remaining_workouts[0].workout_date,
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+            # Recalculate current streak from most recent workout backward
+            # Grace period: gap <= 2 days keeps the streak alive
+            streak = 1
+            for i in range(len(remaining_workouts) - 1):
+                gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
+                if 0 < gap <= 2:
+                    streak += 1
+                elif gap == 0:
+                    continue  # same day — don't count twice
+                else:
+                    break  # gap >= 3 days — streak broken
+            progress.current_streak = streak
+
+            # Recalculate longest_streak from full workout history
+            max_streak = 1
+            run = 1
+            for i in range(len(remaining_workouts) - 1):
+                gap = (remaining_workouts[i].workout_date - remaining_workouts[i + 1].workout_date).days
+                if 0 < gap <= 2:
+                    run += 1
+                    max_streak = max(max_streak, run)
+                elif gap == 0:
+                    continue
+                else:
+                    run = 1
+            progress.longest_streak = max_streak
+        else:
+            progress.last_workout_at = None
+            progress.current_streak = 0
+            progress.longest_streak = 0
+
+        # 5. Reverse mission progress contributed by this workout
+        _reverse_mission_progress(db, current_user.id, exercises, total_volume, progress)
+
+        # 6. Recalculate personal records — remove PRs that relied on this workout
+        _reverse_prs(db, current_user.id, exercises, workout_id)
+
     db.delete(workout)
     db.commit()

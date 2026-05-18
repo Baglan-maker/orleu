@@ -1,12 +1,11 @@
-// mobile/app/(tabs)/campaign.tsx
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Animated, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import Svg, { Line, Path, Polyline, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Card }        from '../../components/ui/Card';
@@ -15,47 +14,259 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import {
   progressApi, campaignApi, coachApi,
   type ProgressResponse, type CampaignResponse,
-  type ChapterResponse, type CoachMessage,
+  type ChapterResponse, type CoachMessageResponse,
+  type ChapterRequirement, type CampaignCurrentResponse,
 } from '../../services/gamificationApi';
 
 // ─── Icons ───────────────────────────────────────────────────────
-function ICheck()  { return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={Colors.up} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
-function IZap()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>; }
-function ILock()   { return <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={Colors.t3} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><Rect x="3" y="11" width="18" height="11" rx="2"/><Path d="M7 11V7a5 5 0 0 1 10 0v4"/></Svg>; }
-function ITrendUp(){ return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
-function IFlat()   { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={2} strokeLinecap="round"><Line x1="5" y1="12" x2="19" y2="12"/><Polyline points="14 7 19 12 14 17"/></Svg>; }
-function IBrain()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
-function ICheck2() { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
+function ITrendUp()  { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.cr} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><Polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><Polyline points="17 6 23 6 23 12"/></Svg>; }
+function IFlat()     { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={2} strokeLinecap="round"><Line x1="5" y1="12" x2="19" y2="12"/><Polyline points="14 7 19 12 14 17"/></Svg>; }
+function IBrain()    { return <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={Colors.bone} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66Z"/><Path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66Z"/></Svg>; }
+function ICheck2()   { return <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><Polyline points="20 6 9 17 4 12"/></Svg>; }
+function IStar()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fill={Colors.flat} stroke={Colors.flat} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></Svg>; }
+function ICoin()     { return <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Circle cx="12" cy="12" r="10"/><Path d="M12 6v2m0 8v2m-4-6h8"/></Svg>; }
+function ITrophy()   { return <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={Colors.flat} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><Path d="M6 9H4a2 2 0 0 1-2-2V5h4"/><Path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/><Path d="M6 5h12v6a6 6 0 0 1-12 0V5z"/><Path d="M12 17v4"/><Path d="M8 21h8"/></Svg>; }
+
+// ─── RPG-themed chapter icons (map markers) ──────────────────────
+function IFlagStart({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M5 21V4"/>
+      <Path d="M5 4h11l-2 3.5L16 11H5"/>
+    </Svg>
+  );
+}
+// Footprint — far more recognizable than a hiking boot at 18px.
+function IFootprint({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M8 11.5c0-3 1.7-4.5 4-4.5s4 1.5 4 4.5c0 4-1 9.5-4 9.5s-4-5.5-4-9.5z"/>
+      <Circle cx="8" cy="5.2" r="1.1"/>
+      <Circle cx="11.3" cy="3.5" r="1.3"/>
+      <Circle cx="14.7" cy="3.8" r="1.2"/>
+      <Circle cx="17" cy="5.8" r="1.1"/>
+    </Svg>
+  );
+}
+// Blacksmith anvil — classic side silhouette with horn, neck, and base.
+function IAnvil({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M21 7 L21 10 L5 10 L2 8.5 L5 7 Z"/>
+      <Path d="M9 10 L9 15 L15 15 L15 10"/>
+      <Path d="M5 15 L19 15 L17 19 L7 19 Z"/>
+    </Svg>
+  );
+}
+function ICompass({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx="12" cy="12" r="9"/>
+      <Path d="M15 9l-1.5 4.5L9 15l1.5-4.5L15 9z"/>
+    </Svg>
+  );
+}
+function IMountain({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M3 20l5-10 3 5 3-4 7 9H3z"/>
+      <Path d="M7 12l1-1"/>
+    </Svg>
+  );
+}
+function ICrown({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M3 8l3 9h12l3-9-5 4-4-7-4 7-5-4z"/>
+      <Path d="M6 19h12"/>
+    </Svg>
+  );
+}
+function ILockChest({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x="3" y="11" width="18" height="11" rx="2"/>
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      <Circle cx="12" cy="16" r="1"/>
+    </Svg>
+  );
+}
 
 type NodeStatus = 'done' | 'active' | 'locked';
 
+function chapterIcon(chapterNumber: number | null, status: NodeStatus): React.ReactNode {
+  const color =
+    status === 'done'   ? Colors.up :
+    status === 'active' ? Colors.cr :
+                          Colors.t3;
+  if (status === 'locked') return <ILockChest color={color}/>;
+  if (chapterNumber === null) return <IFlagStart color={color}/>;
+  switch (chapterNumber) {
+    case 1: return <IFootprint color={color}/>;
+    case 2: return <IAnvil color={color}/>;
+    case 3: return <ICompass color={color}/>;
+    case 4: return <IMountain color={color}/>;
+    case 5: return <ICrown color={color}/>;
+    default: return <IFlagStart color={color}/>;
+  }
+}
+
+// ─── Curved trail connector between map nodes ────────────────────
+function CurvedConnector({ done, bowRight }: { done: boolean; bowRight: boolean }) {
+  const color = done ? `${Colors.up}55` : 'rgba(255,255,255,0.07)';
+  const d = bowRight
+    ? 'M22 0 C 40 12, 40 24, 22 34'
+    : 'M22 0 C 4 12, 4 24, 22 34';
+  return (
+    <View style={{ width: 44, height: 34, alignSelf: 'flex-start' }} pointerEvents="none">
+      <Svg width={44} height={34}>
+        <Path
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeDasharray={done ? undefined : '2 5'}
+        />
+      </Svg>
+    </View>
+  );
+}
+
+// ─── Topographic / grid map backdrop ─────────────────────────────
+function TopoMapBg() {
+  const contour    = 'rgba(232,224,212,0.07)';
+  const contourDim = 'rgba(232,224,212,0.045)';
+  const grid       = 'rgba(255,255,255,0.06)';
+  return (
+    <View style={s.bgLayer} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox="0 0 400 1400" preserveAspectRatio="xMidYMid slice">
+        {Array.from({ length: 15 }).map((_, i) => (
+          <Line key={`h${i}`} x1="0" y1={i * 100} x2="400" y2={i * 100} stroke={grid} strokeWidth={0.6}/>
+        ))}
+        {Array.from({ length: 9 }).map((_, i) => (
+          <Line key={`v${i}`} x1={i * 50} y1="0" x2={i * 50} y2="1400" stroke={grid} strokeWidth={0.6}/>
+        ))}
+        <Path d="M-20 80 Q 100 50 220 90 T 460 70"      stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 140 Q 80 110 200 150 T 460 120"   stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 220 Q 120 190 240 230 T 460 200"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 340 Q 80 310 220 350 T 460 320"   stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 440 Q 100 410 220 450 T 460 420"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 560 Q 130 530 230 570 T 460 540"  stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 680 Q 90 650 220 690 T 460 660"   stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 800 Q 110 770 220 810 T 460 780"  stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 920 Q 100 890 220 930 T 460 900"  stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 1040 Q 130 1010 230 1050 T 460 1020" stroke={contourDim} strokeWidth={1} fill="none"/>
+        <Path d="M-20 1160 Q 100 1130 220 1170 T 460 1140" stroke={contour}    strokeWidth={1} fill="none"/>
+        <Path d="M-20 1280 Q 130 1250 230 1290 T 460 1260" stroke={contourDim} strokeWidth={1} fill="none"/>
+      </Svg>
+    </View>
+  );
+}
+
 interface DisplayNode {
-  id:      string;
-  label:   string;
-  sub:     string;
-  status:  NodeStatus;
-  chapter: ChapterResponse | null;
+  id:            string;
+  label:         string;
+  sub:           string;
+  status:        NodeStatus;
+  chapter:       ChapterResponse | null;
+  chapterNumber: number | null;
+}
+
+// ─── Animated node indicator: pulse on active, glow on done ──────
+function NodeIndicator({ status, children }: { status: NodeStatus; children: React.ReactNode }) {
+  const pulse = useRef(new Animated.Value(1)).current;
+  const glow  = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (status !== 'active') { pulse.setValue(1); glow.setValue(0.5); return; }
+    const loop = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.08, duration: 900, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.timing(glow, { toValue: 0.95, duration: 900, useNativeDriver: true }),
+          Animated.timing(glow, { toValue: 0.5,  duration: 900, useNativeDriver: true }),
+        ]),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [status]);
+
+  const ringColor =
+    status === 'done'   ? `${Colors.up}55` :
+    status === 'active' ? `${Colors.cr}55` :
+    'transparent';
+
+  return (
+    <View style={s.nodeIndicatorWrap}>
+      {(status === 'active' || status === 'done') && (
+        <Animated.View
+          style={[
+            s.nodeRing,
+            { borderColor: ringColor },
+            status === 'active' && { opacity: glow, transform: [{ scale: pulse }] },
+          ]}
+        />
+      )}
+      <Animated.View
+        style={[
+          s.nodeCircle,
+          status === 'done'   && s.nodeDone,
+          status === 'active' && s.nodeActive,
+          status === 'locked' && s.nodeLocked,
+          status === 'active' && { transform: [{ scale: pulse }] },
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+// ── Campaign completion XP bonus (mirrors backend CAMPAIGN_COMPLETION_BONUS) ──
+const CAMPAIGN_BONUS_XP    = 500;
+const CAMPAIGN_BONUS_COINS = 200;
+
+// ── Locked chapter requirement summaries (static, for locked nodes only) ──
+function lockedChapterSummary(chapterNumber: number): string {
+  switch (chapterNumber) {
+    case 1: return '3 workouts';
+    case 2: return '3 days this week · full workout';
+    case 3: return 'Choose your path';
+    case 4: return 'Path-based challenge · 2 missions';
+    case 5: return 'Campaign endgame challenge';
+    default: return 'Complete previous chapters';
+  }
 }
 
 export default function CampaignScreen() {
-  const [progress,    setProgress]    = useState<ProgressResponse | null>(null);
-  const [campaign,    setCampaign]    = useState<CampaignResponse | null>(null);
-  const [chapters,    setChapters]    = useState<ChapterResponse[]>([]);
-  const [coachMsg,    setCoachMsg]    = useState<CoachMessage | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [branch,      setBranch]      = useState<'A' | 'B' | null>(null);
-  const [confirming,  setConfirming]  = useState(false);
-  const [confirmed,   setConfirmed]   = useState(false);
-  const [expandedId,  setExpandedId]  = useState<string | null>(null);
+  const [progress,      setProgress]      = useState<ProgressResponse | null>(null);
+  const [campaign,      setCampaign]       = useState<CampaignResponse | null>(null);
+  const [chapters,      setChapters]       = useState<ChapterResponse[]>([]);
+  const [requirements,  setRequirements]   = useState<ChapterRequirement[]>([]);
+  const [coachMsg,      setCoachMsg]       = useState<CoachMessageResponse | null>(null);
+  const [loading,       setLoading]        = useState(true);
+  const [branch,        setBranch]         = useState<'A' | 'B' | null>(null);
+  const [confirming,    setConfirming]     = useState(false);
+  const [confirmed,     setConfirmed]      = useState(false);
+  const [expandedId,    setExpandedId]     = useState<string | null>(null);
+  const [campaignBanner, setCampaignBanner] = useState<string | null>(null);
+
+  const lastSeenCampaignId = useRef<string | null>(null);
+  const bannerTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         try {
-          const [progRes, campaignsRes] = await Promise.all([
+          const [progRes, currentRes] = await Promise.all([
             progressApi.get(),
-            campaignApi.list(),
+            campaignApi.current().catch(() => null),
           ]);
           if (cancelled) return;
 
@@ -69,23 +280,27 @@ export default function CampaignScreen() {
             setConfirmed(false);
           }
 
-          const campaigns = campaignsRes.data;
-          const current =
-            campaigns.find(c => c.id === prog.current_campaign_id) ??
-            campaigns[0] ??
-            null;
-          setCampaign(current);
+          if (currentRes) {
+            const cur: CampaignCurrentResponse = currentRes.data;
+            setCampaign(cur.campaign);
+            // Map ChapterWithStatus to ChapterResponse shape (same fields + status ignored here)
+            setChapters(cur.chapters as unknown as ChapterResponse[]);
+            setRequirements(cur.requirements ?? []);
 
-          if (current) {
-            const [chapRes, coachRes] = await Promise.all([
-              campaignApi.chapters(current.id),
-              coachApi.getMessages().catch(() => ({ data: [] as CoachMessage[] })),
-            ]);
+            if (lastSeenCampaignId.current !== null && cur.campaign.id !== lastSeenCampaignId.current) {
+              setCampaignBanner(cur.campaign.name);
+              if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+              bannerTimerRef.current = setTimeout(() => setCampaignBanner(null), 4000);
+            }
+            lastSeenCampaignId.current = cur.campaign.id;
+
+            const coachRes = await coachApi.getMessages().catch(() => ({ data: [] as CoachMessageResponse[] }));
             if (!cancelled) {
-              setChapters(chapRes.data);
               const msgs = coachRes.data;
               setCoachMsg(msgs.length > 0 ? msgs[0] : null);
             }
+          } else {
+            lastSeenCampaignId.current = null;
           }
         } catch {
           // fall through to defaults
@@ -98,10 +313,13 @@ export default function CampaignScreen() {
   );
 
   function getChapterStatus(chapter: ChapterResponse): NodeStatus {
+    if (progress?.current_campaign_id && !progress.current_chapter_id) return 'done';
     if (!progress?.current_chapter_id) return 'locked';
     const currentChapter = chapters.find(c => c.id === progress.current_chapter_id);
     if (!currentChapter) return 'locked';
-    if (chapter.chapter_number < currentChapter.chapter_number) return 'done';
+    const currentNum = (currentChapter as unknown as { chapter_number: number }).chapter_number;
+    const chapNum    = (chapter as unknown as { chapter_number: number }).chapter_number;
+    if (chapNum < currentNum) return 'done';
     if (chapter.id === progress.current_chapter_id) return 'active';
     return 'locked';
   }
@@ -120,21 +338,40 @@ export default function CampaignScreen() {
     }
   }
 
-  // Derived values
+  const allComplete   = !!(progress?.current_campaign_id && !progress?.current_chapter_id);
   const doneCount     = chapters.filter(c => getChapterStatus(c) === 'done').length;
   const totalChapters = campaign?.total_chapters ?? chapters.length;
   const pct           = totalChapters > 0 ? Math.round(doneCount / totalChapters * 100) : 0;
+  const pathChosen    = !!(progress?.campaign_path);
 
-  const startDone = doneCount > 0 || !!progress?.current_chapter_id;
+  // Aggregate requirement progress for the active chapter, surfaced
+  // on the collapsed row so users don't need to expand to see status.
+  const reqMetCount   = requirements.filter(r => r.met).length;
+  const reqTotalCount = requirements.length;
+  const reqPct        = reqTotalCount > 0
+    ? Math.round(
+        requirements.reduce((acc, r) => {
+          const capped = Math.min(r.current, r.target);
+          return acc + (r.target > 0 ? capped / r.target : (r.met ? 1 : 0));
+        }, 0) / reqTotalCount * 100
+      )
+    : 0;
+
+  const startDone = doneCount > 0 || !!progress?.current_chapter_id || allComplete;
   const nodes: DisplayNode[] = [
-    { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null },
-    ...chapters.map(c => ({
-      id:      c.id,
-      label:   c.title,
-      sub:     getChapterStatus(c) === 'done' ? 'Complete' : '',
-      status:  getChapterStatus(c),
-      chapter: c,
-    })),
+    { id: 'start', label: 'Journey Begins', sub: '', status: startDone ? 'done' : 'active', chapter: null, chapterNumber: null },
+    ...chapters.map(c => {
+      const st = getChapterStatus(c);
+      const chapNum = (c as unknown as { chapter_number: number }).chapter_number;
+      return {
+        id:            c.id,
+        label:         c.title,
+        sub:           st === 'done' ? 'Complete' : st === 'locked' ? lockedChapterSummary(chapNum) : '',
+        status:        st,
+        chapter:       c,
+        chapterNumber: chapNum,
+      };
+    }),
   ];
 
   const toGo = totalChapters - doneCount;
@@ -153,6 +390,9 @@ export default function CampaignScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
+        {/* ── Topographic map backdrop (decorative) ── */}
+        <TopoMapBg/>
+
         {/* ── Header ── */}
         <View style={s.header}>
           <View style={{ flex: 1, marginRight: 12 }}>
@@ -163,6 +403,13 @@ export default function CampaignScreen() {
           </View>
           <Text style={s.pct}>{pct}%</Text>
         </View>
+
+        {/* ── Campaign transition banner ── */}
+        {campaignBanner && (
+          <View style={s.campaignBanner}>
+            <Text style={s.campaignBannerText}>New Campaign Unlocked: {campaignBanner}</Text>
+          </View>
+        )}
 
         {/* ── Progress bar ── */}
         <View style={{ paddingHorizontal: Spacing.xxl, marginBottom: Spacing.xl }}>
@@ -175,157 +422,322 @@ export default function CampaignScreen() {
           />
         </View>
 
-        {/* ── Node map ── */}
-        <View style={{ paddingHorizontal: Spacing.xxl }}>
-          {nodes.map((node, i) => (
-            <View key={node.id}>
-              {/* Node row — tappable */}
-              <TouchableOpacity
-                style={s.nodeRow}
-                activeOpacity={node.status === 'locked' ? 0.5 : 0.75}
-                onPress={() => setExpandedId(expandedId === node.id ? null : node.id)}
-              >
-                <View style={[
-                  s.nodeCircle,
-                  node.status === 'done'   && s.nodeDone,
-                  node.status === 'active' && s.nodeActive,
-                  node.status === 'locked' && s.nodeLocked,
-                ]}>
-                  {node.status === 'done'   && <ICheck/>}
-                  {node.status === 'active' && <IZap/>}
-                  {node.status === 'locked' && <ILock/>}
-                </View>
+        {/* ── All Campaigns Complete ── */}
+        {allComplete ? (
+          <View style={s.completedCard}>
+            <View style={s.completedTrophyWrap}>
+              <ITrophy/>
+            </View>
+            <Text style={s.completedTitle}>All Campaigns Complete</Text>
+            <Text style={s.completedSub}>
+              You've reached the summit. New campaigns coming soon.
+            </Text>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.nodeLabel, node.status === 'locked' && { color: Colors.t3 }]}>
-                    {node.label}
-                  </Text>
-                  {node.sub ? (
-                    <Text style={[
-                      s.nodeSub,
-                      node.status === 'done'   && { color: Colors.up },
-                      node.status === 'active' && { color: Colors.cr },
-                    ]}>
-                      {node.sub}
-                    </Text>
-                  ) : null}
-                </View>
+            <View style={s.rewardRow}>
+              <View style={s.rewardPill}>
+                <IStar/>
+                <Text style={s.rewardPillText}>+{CAMPAIGN_BONUS_XP} XP Bonus</Text>
+              </View>
+              <View style={s.rewardPill}>
+                <ICoin/>
+                <Text style={s.rewardPillText}>+{CAMPAIGN_BONUS_COINS} Coins Bonus</Text>
+              </View>
+            </View>
 
-                {/* Chevron */}
-                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"
-                  stroke={expandedId === node.id ? Colors.t2 : Colors.t3}
-                  strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+            <View style={s.completedStats}>
+              <View style={s.completedStat}>
+                <Text style={s.completedStatNum}>{chapters.length}</Text>
+                <Text style={s.completedStatLabel}>chapters done</Text>
+              </View>
+              <View style={s.completedStatDivider}/>
+              <View style={s.completedStat}>
+                <Text style={s.completedStatNum}>{progress?.total_sessions ?? 0}</Text>
+                <Text style={s.completedStatLabel}>workouts logged</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: Spacing.xxl }}>
+            {nodes.map((node, i) => (
+              <View key={node.id}>
+                {/* Node row — tappable. Locked rows wear a fog-of-war veil. */}
+                <TouchableOpacity
+                  style={[s.nodeRow, node.status === 'locked' && s.nodeRowLocked]}
+                  activeOpacity={node.status === 'locked' ? 0.5 : 0.75}
+                  onPress={() => setExpandedId(expandedId === node.id ? null : node.id)}
                 >
-                  {expandedId === node.id
-                    ? <Polyline points="18 15 12 9 6 15"/>
-                    : <Polyline points="6 9 12 15 18 9"/>}
-                </Svg>
-              </TouchableOpacity>
+                  <NodeIndicator status={node.status}>
+                    {chapterIcon(node.chapterNumber, node.status)}
+                  </NodeIndicator>
 
-              {/* Inline expansion panel */}
-              {expandedId === node.id && (
-                <View style={s.expandPanel}>
-                  {node.chapter ? (
-                    <>
-                      <Text style={s.expandChapterNum}>Chapter {node.chapter.chapter_number}</Text>
-                      {node.chapter.narrative_text ? (
-                        <Text style={s.expandNarrative}>{node.chapter.narrative_text}</Text>
-                      ) : (
-                        <Text style={s.expandNarrative}>
-                          {node.status === 'locked'
-                            ? 'Complete previous chapters to unlock this one.'
-                            : 'No narrative description available yet.'}
-                        </Text>
-                      )}
-                      {node.chapter.has_branch && (
-                        <View style={s.expandBranchHint}>
-                          <Text style={s.expandBranchLabel}>This chapter has a branch choice</Text>
-                          {node.chapter.branch_a_label && (
-                            <Text style={s.expandBranchOption}>A · {node.chapter.branch_a_label}</Text>
-                          )}
-                          {node.chapter.branch_b_label && (
-                            <Text style={s.expandBranchOption}>B · {node.chapter.branch_b_label}</Text>
-                          )}
-                        </View>
-                      )}
-                    </>
-                  ) : (
-                    <Text style={s.expandNarrative}>
-                      Your journey begins here. Log your first session to advance to Chapter 1.
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.nodeLabel, node.status === 'locked' && { color: Colors.t3 }]}>
+                      {node.label}
                     </Text>
-                  )}
-                </View>
-              )}
+                    {node.sub ? (
+                      <Text style={[
+                        s.nodeSub,
+                        node.status === 'done'   && { color: Colors.up },
+                        node.status === 'active' && { color: Colors.t2 },
+                        node.status === 'locked' && { color: Colors.t3 },
+                      ]}>
+                        {node.sub}
+                      </Text>
+                    ) : null}
 
-              {/* Branch selector — shown on active chapter with branch */}
-              {node.status === 'active' && node.chapter?.has_branch && !confirmed && (
-                <View style={s.branchWrap}>
-                  <View style={s.branchConnector}/>
-                  <Text style={s.branchTitle}>Choose your path</Text>
-                  <View style={s.branchRow}>
-                    {([
-                      {
-                        k:    'A' as const,
-                        icon: <ITrendUp/>,
-                        label: node.chapter.branch_a_label ?? 'Path A',
-                        tc:   Colors.cr,
-                        tag:  'Hard',
-                      },
-                      {
-                        k:    'B' as const,
-                        icon: <IFlat/>,
-                        label: node.chapter.branch_b_label ?? 'Path B',
-                        tc:   Colors.flat,
-                        tag:  'Moderate',
-                      },
-                    ] as const).map(opt => (
-                      <TouchableOpacity
-                        key={opt.k}
-                        onPress={() => setBranch(opt.k)}
-                        style={[
-                          s.branchCard,
-                          branch === opt.k && { borderColor: opt.tc, backgroundColor: `${opt.tc}10` },
-                        ]}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ marginBottom: 8 }}>{opt.icon}</View>
-                        <Text style={s.branchLabel}>{opt.label}</Text>
-                        <Text style={[s.branchTag, { color: opt.tc }]}>{opt.tag}</Text>
-                        {branch === opt.k && (
-                          <View style={[s.branchCheck, { backgroundColor: opt.tc }]}>
-                            <ICheck2/>
+                    {/* At-a-glance progress for the active chapter */}
+                    {node.status === 'active' && reqTotalCount > 0 && (
+                      <View style={s.nodeProgressWrap}>
+                        <View style={s.nodeProgressBarBg}>
+                          <View style={[
+                            s.nodeProgressBarFill,
+                            { width: `${reqPct}%` },
+                            reqMetCount === reqTotalCount && { backgroundColor: Colors.up },
+                          ]}/>
+                        </View>
+                        <Text style={s.nodeProgressTxt}>{reqMetCount}/{reqTotalCount}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Chevron */}
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none"
+                    stroke={expandedId === node.id ? Colors.t2 : Colors.t3}
+                    strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+                  >
+                    {expandedId === node.id
+                      ? <Polyline points="18 15 12 9 6 15"/>
+                      : <Polyline points="6 9 12 15 18 9"/>}
+                  </Svg>
+                </TouchableOpacity>
+
+                {/* Inline expansion panel */}
+                {expandedId === node.id && (
+                  <View style={s.expandPanel}>
+                    {node.chapter ? (
+                      <>
+                        <Text style={s.expandChapterNum}>
+                          Chapter {(node.chapter as unknown as { chapter_number: number }).chapter_number}
+                        </Text>
+
+                        {/* Narrative */}
+                        {node.chapter.narrative_text ? (
+                          <Text style={s.expandNarrative}>{node.chapter.narrative_text}</Text>
+                        ) : (
+                          <Text style={s.expandNarrative}>
+                            {node.status === 'locked'
+                              ? 'Complete previous chapters to unlock this one.'
+                              : 'Keep pushing — your journey continues.'}
+                          </Text>
+                        )}
+
+                        {/* ── Requirements ── */}
+                        {node.status !== 'locked' && (
+                          <View style={s.conditionsBlock}>
+                            <Text style={s.conditionsTitle}>
+                              {node.status === 'done' ? 'Completed' : 'Requirements'}
+                            </Text>
+
+                            {node.status === 'done' ? (
+                              // Completed chapter — just show a checkmark row
+                              <View style={s.condRow}>
+                                <View style={[s.condDot, s.condDotDone]}/>
+                                <Text style={[s.condLabel, s.condLabelDone]}>All requirements met</Text>
+                                <View style={s.condCheck}><ICheck2/></View>
+                              </View>
+                            ) : (
+                              // Active chapter — show live requirements from API
+                              requirements.length === 0 ? (
+                                <View style={s.condRow}>
+                                  <View style={[s.condDot, pathChosen && s.condDotDone]}/>
+                                  <Text style={[s.condLabel, pathChosen && s.condLabelDone]}>
+                                    Choose your path below
+                                  </Text>
+                                  {pathChosen && <View style={s.condCheck}><ICheck2/></View>}
+                                </View>
+                              ) : (
+                                requirements.map((req, ci) => {
+                                  // Boolean requirement (target === 1, current is 0 or 1)
+                                  if (req.target === 1 && req.current <= 1) {
+                                    return (
+                                      <View key={ci} style={s.condRow}>
+                                        <View style={[s.condDot, req.met && s.condDotDone]}/>
+                                        <Text style={[s.condLabel, req.met && s.condLabelDone]}>
+                                          {req.label}
+                                        </Text>
+                                        {req.met && <View style={s.condCheck}><ICheck2/></View>}
+                                      </View>
+                                    );
+                                  }
+                                  // Numeric requirement — show bar
+                                  const capped   = Math.min(req.current, req.target);
+                                  const pctCond  = req.target > 0 ? Math.round(capped / req.target * 100) : 0;
+                                  return (
+                                    <View key={ci} style={s.condBlock}>
+                                      <View style={s.condRow}>
+                                        <View style={[s.condDot, req.met && s.condDotDone]}/>
+                                        <Text style={[s.condLabel, req.met && s.condLabelDone]}>
+                                          {req.label}
+                                        </Text>
+                                        <Text style={[s.condProgress, req.met && { color: Colors.up }]}>
+                                          {Math.round(capped)}/{Math.round(req.target)}
+                                        </Text>
+                                      </View>
+                                      <View style={s.condBarBg}>
+                                        <View style={[
+                                          s.condBarFill,
+                                          { width: `${pctCond}%`, backgroundColor: req.met ? Colors.up : Colors.cr },
+                                        ]}/>
+                                      </View>
+                                    </View>
+                                  );
+                                })
+                              )
+                            )}
                           </View>
                         )}
-                      </TouchableOpacity>
-                    ))}
+
+                        {/* Locked chapter — show static summary */}
+                        {node.status === 'locked' && (
+                          <View style={s.conditionsBlock}>
+                            <Text style={s.conditionsTitle}>Requires</Text>
+                            <View style={s.condRow}>
+                              <View style={s.condDot}/>
+                              <Text style={s.condLabel}>
+                                {lockedChapterSummary(
+                                  (node.chapter as unknown as { chapter_number: number }).chapter_number
+                                )}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+
+                        {/* ── Rewards ── */}
+                        <View style={s.rewardBlock}>
+                          <Text style={s.conditionsTitle}>
+                            {node.status === 'done' ? 'Rewards Earned' : 'Chapter Reward'}
+                          </Text>
+                          <View style={s.rewardRow}>
+                            <View style={[s.rewardPill, node.status === 'done' && s.rewardPillEarned]}>
+                              <IStar/>
+                              <Text style={[s.rewardPillText, node.status === 'done' && s.rewardPillTextEarned]}>
+                                +{node.chapter.reward_xp} XP
+                              </Text>
+                            </View>
+                            <View style={[s.rewardPill, node.status === 'done' && s.rewardPillEarned]}>
+                              <ICoin/>
+                              <Text style={[s.rewardPillText, node.status === 'done' && s.rewardPillTextEarned]}>
+                                +{node.chapter.reward_coins} Coins
+                              </Text>
+                            </View>
+                            {(node.chapter as unknown as { chapter_number: number }).chapter_number === totalChapters && (
+                              <View style={s.rewardPillBonus}>
+                                <Text style={s.rewardPillBonusText}>+{CAMPAIGN_BONUS_XP} XP Campaign Bonus</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+
+                        {/* Branch hint for locked chapters */}
+                        {node.chapter.has_branch && node.status === 'locked' && (
+                          <View style={s.expandBranchHint}>
+                            <Text style={s.expandBranchLabel}>This chapter has a path choice</Text>
+                            {node.chapter.branch_a_label && (
+                              <Text style={s.expandBranchOption}>A · {node.chapter.branch_a_label}</Text>
+                            )}
+                            {node.chapter.branch_b_label && (
+                              <Text style={s.expandBranchOption}>B · {node.chapter.branch_b_label}</Text>
+                            )}
+                          </View>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={s.expandNarrative}>
+                        Your journey begins here. Log your first session to advance to Chapter 1.
+                      </Text>
+                    )}
                   </View>
-                  {branch && (
-                    <Button
-                      label={confirming ? 'Saving...' : `Confirm Path ${branch}`}
-                      onPress={confirmPath}
-                      disabled={confirming}
-                      style={{ marginTop: 12 }}
-                    />
-                  )}
-                </View>
-              )}
+                )}
 
-              {confirmed && node.status === 'active' && node.chapter?.has_branch && (
-                <View style={s.confirmedBadge}>
-                  <Text style={s.confirmedText}>Path {branch} selected</Text>
-                </View>
-              )}
+                {/* Branch selector — shown on active chapter with branch */}
+                {node.status === 'active' && node.chapter?.has_branch && !confirmed && (
+                  <View style={s.branchWrap}>
+                    <View style={s.branchConnector}/>
+                    <Text style={s.branchTitle}>Choose your path</Text>
+                    <Text style={s.branchSubtitle}>Your choice shapes the next chapter's missions</Text>
+                    <View style={s.branchRow}>
+                      {([
+                        {
+                          k:    'A' as const,
+                          icon: <ITrendUp/>,
+                          label: node.chapter.branch_a_label ?? 'Path A',
+                          tc:   Colors.cr,
+                          tag:  'Strength',
+                          desc: 'PRs, heavy lifts, beat your personal records.',
+                          req:  'Beat a PR · 2 missions',
+                        },
+                        {
+                          k:    'B' as const,
+                          icon: <IFlat/>,
+                          label: node.chapter.branch_b_label ?? 'Path B',
+                          tc:   Colors.flat,
+                          tag:  'Endurance',
+                          desc: 'Consistent reps, more training days, volume missions.',
+                          req:  '4 days in a week · 2 missions',
+                        },
+                      ] as const).map(opt => (
+                        <TouchableOpacity
+                          key={opt.k}
+                          onPress={() => setBranch(opt.k)}
+                          style={[
+                            s.branchCard,
+                            branch === opt.k && { borderColor: opt.tc, backgroundColor: `${opt.tc}10` },
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ marginBottom: 6 }}>{opt.icon}</View>
+                          <Text style={s.branchLabel}>{opt.label}</Text>
+                          <Text style={[s.branchTag, { color: opt.tc }]}>{opt.tag}</Text>
+                          <Text style={s.branchDesc}>{opt.desc}</Text>
+                          <View style={s.branchReqRow}>
+                            <Text style={s.branchReqText}>{opt.req}</Text>
+                          </View>
+                          {branch === opt.k && (
+                            <View style={[s.branchCheck, { backgroundColor: opt.tc }]}>
+                              <ICheck2/>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {branch && (
+                      <Button
+                        label={confirming ? 'Saving...' : `Confirm Path ${branch}`}
+                        onPress={confirmPath}
+                        disabled={confirming}
+                        style={{ marginTop: 12 }}
+                      />
+                    )}
+                  </View>
+                )}
 
-              {/* Connector line */}
-              {i < nodes.length - 1 && (
-                <View style={[
-                  s.connector,
-                  node.status === 'done' && { backgroundColor: `${Colors.up}30` },
-                ]}/>
-              )}
-            </View>
-          ))}
-        </View>
+                {confirmed && node.status === 'active' && node.chapter?.has_branch && (
+                  <View style={s.confirmedBadge}>
+                    <Text style={s.confirmedText}>Path {branch} selected</Text>
+                  </View>
+                )}
+
+                {/* Curved trail connector — alternates direction for a winding-path feel */}
+                {i < nodes.length - 1 && (
+                  <CurvedConnector
+                    done={node.status === 'done'}
+                    bowRight={i % 2 === 0}
+                  />
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── AI Coach ── */}
         <Card variant="bone" style={{ marginTop: Spacing.lg }}>
@@ -334,7 +746,7 @@ export default function CampaignScreen() {
             <View style={{ flex: 1 }}>
               <Text style={s.coachLabel}>AI COACH</Text>
               <Text style={s.coachText}>
-                {coachMsg?.message ?? 'Keep pushing — consistency is the key to your ascent.'}
+                {coachMsg?.message_text ?? 'Keep pushing — consistency is the key to your ascent.'}
               </Text>
             </View>
           </View>
@@ -349,6 +761,13 @@ const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: Colors.s1 },
   scroll: { paddingTop: Spacing.xl, paddingBottom: 40 },
 
+  // Topographic map backdrop — scrolls with content, sits behind everything.
+  bgLayer: { position: 'absolute', top: 0, left: 0, right: 0, height: 1500 },
+
+  // Fog-of-war veil on locked chapter rows: faded, so future content
+  // feels obscured rather than spelled out in plain gray.
+  nodeRowLocked: { opacity: 0.5 },
+
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
     paddingHorizontal: Spacing.xxl, marginBottom: Spacing.lg,
@@ -357,28 +776,46 @@ const s = StyleSheet.create({
   pageTitle:{ fontSize: 24, fontFamily: Fonts.displayBold, color: Colors.t1, letterSpacing: -0.5, lineHeight: 30 },
   pct:      { fontSize: 22, fontFamily: Fonts.monoBold, color: Colors.bone, marginTop: 4 },
 
+  campaignBanner: {
+    marginHorizontal: Spacing.xxl, marginBottom: Spacing.md,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: Colors.crLo, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.crBdr,
+  },
+  campaignBannerText: { fontSize: 12, fontFamily: Fonts.semiBold, color: Colors.cr, letterSpacing: 0.2 },
+
   nodeRow:    { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 6 },
+  nodeIndicatorWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  nodeRing: {
+    position: 'absolute',
+    width: 56, height: 56, borderRadius: 28,
+    borderWidth: 2,
+  },
   nodeCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   nodeDone:   { backgroundColor: `${Colors.up}15`,  borderWidth: 1.5, borderColor: `${Colors.up}35`  },
   nodeActive: { backgroundColor: Colors.crLo,        borderWidth: 1.5, borderColor: Colors.cr         },
-  nodeLocked: { backgroundColor: Colors.s3,          borderWidth: 1.5, borderColor: Colors.line, opacity: 0.4 },
+  nodeLocked: { backgroundColor: Colors.s3,          borderWidth: 1.5, borderColor: Colors.line, borderStyle: 'dashed' },
   nodeLabel:  { fontSize: 14, fontFamily: Fonts.semiBold, color: Colors.t1, lineHeight: 20 },
-  nodeSub:    { fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2 },
-
-  connector: { width: 2, height: 24, marginLeft: 21, backgroundColor: Colors.line },
+  nodeSub:    { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2 },
+  nodeProgressWrap:    { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  nodeProgressBarBg:   { flex: 1, height: 3, backgroundColor: Colors.s4, borderRadius: 2, overflow: 'hidden' },
+  nodeProgressBarFill: { height: 3, backgroundColor: Colors.cr, borderRadius: 2 },
+  nodeProgressTxt:     { fontSize: 10, fontFamily: Fonts.monoBold, color: Colors.t3 },
 
   branchWrap:      { marginLeft: 21, marginBottom: 4 },
   branchConnector: { width: 2, height: 16, backgroundColor: `${Colors.cr}40`, marginLeft: 21, marginBottom: 12 },
   branchTitle:     { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, textTransform: 'uppercase', paddingLeft: 44, marginBottom: 12 },
   branchRow:       { flexDirection: 'row', gap: 10 },
   branchCard: {
-    flex: 1, backgroundColor: Colors.s3,
-    borderRadius: Radius.md, padding: 14,
-    borderWidth: 1.5, borderColor: Colors.line,
-    alignItems: 'center', position: 'relative',
+    flex: 1, backgroundColor: Colors.s3, borderRadius: Radius.md, padding: 14,
+    borderWidth: 1.5, borderColor: Colors.line, alignItems: 'center', position: 'relative',
   },
-  branchLabel: { fontSize: 13, fontFamily: Fonts.bold, color: Colors.t1, marginBottom: 8, textAlign: 'center' },
-  branchTag:   { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 0.8 },
+  branchLabel:    { fontSize: 13, fontFamily: Fonts.bold, color: Colors.t1, marginBottom: 4, textAlign: 'center' },
+  branchTag:      { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 0.8, marginBottom: 6 },
+  branchSubtitle: { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, paddingLeft: 44, marginBottom: 10 },
+  branchDesc:     { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, textAlign: 'center', lineHeight: 16, marginBottom: 8 },
+  branchReqRow:   { backgroundColor: Colors.s1, borderRadius: Radius.sm, paddingHorizontal: 8, paddingVertical: 4, marginTop: 2 },
+  branchReqText:  { fontSize: 10, fontFamily: Fonts.mono, color: Colors.t3, textAlign: 'center' },
   branchCheck: {
     position: 'absolute', top: 8, right: 8,
     width: 19, height: 19, borderRadius: 10,
@@ -393,20 +830,91 @@ const s = StyleSheet.create({
   confirmedText: { fontSize: 11, fontFamily: Fonts.bold, color: Colors.up, letterSpacing: 0.5 },
 
   coachRow:  { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  coachIcon: { width: 33, height: 33, borderRadius: 10, backgroundColor: Colors.s4, borderWidth: 1, borderColor: Colors.lineH, alignItems: 'center', justifyContent: 'center' },
+  coachIcon: { width: 33, height: 33, borderRadius: 10, backgroundColor: Colors.s4, borderWidth: 1, borderColor: Colors.line, alignItems: 'center', justifyContent: 'center' },
   coachLabel:{ fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.bone, marginBottom: 5 },
   coachText: { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 20 },
 
-  // ── Expansion panel ──────────────────────────────────────────────
+  // ── Expansion panel ───────────────────────────────────────────────
   expandPanel: {
     marginLeft: 58, marginBottom: 4, marginTop: -2,
     backgroundColor: Colors.s3, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.line,
-    padding: 14,
+    borderWidth: 1, borderColor: Colors.line, padding: 14,
   },
   expandChapterNum: { fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.6, color: Colors.t3, textTransform: 'uppercase', marginBottom: 6 },
-  expandNarrative:  { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 20 },
+  expandNarrative:  { fontSize: 13, fontFamily: Fonts.regular, color: Colors.t2, lineHeight: 20, marginBottom: 12 },
   expandBranchHint: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.line },
   expandBranchLabel:{ fontSize: 10, fontFamily: Fonts.bold, letterSpacing: 1.2, color: Colors.t3, textTransform: 'uppercase', marginBottom: 6 },
   expandBranchOption:{ fontSize: 12, fontFamily: Fonts.mono, color: Colors.t2, marginBottom: 3 },
+
+  // ── Conditions block ──────────────────────────────────────────────
+  conditionsBlock: {
+    marginBottom: 12, paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: Colors.line,
+  },
+  conditionsTitle: {
+    fontSize: 9, fontFamily: Fonts.bold, letterSpacing: 1.5,
+    color: Colors.t3, textTransform: 'uppercase', marginBottom: 8,
+  },
+  condBlock:    { marginBottom: 8 },
+  condRow:      { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 4 },
+  condDot:      { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.t3 },
+  condDotDone:  { backgroundColor: Colors.up },
+  condLabel:    { flex: 1, fontSize: 12, fontFamily: Fonts.regular, color: Colors.t2 },
+  condLabelDone:{ color: Colors.up },
+  condProgress: { fontSize: 11, fontFamily: Fonts.monoBold, color: Colors.t3 },
+  condCheck:    { width: 16, height: 16, borderRadius: 8, backgroundColor: Colors.up, alignItems: 'center', justifyContent: 'center' },
+  condBarBg:    { height: 3, backgroundColor: Colors.s4, borderRadius: 2, overflow: 'hidden' },
+  condBarFill:  { height: 3, borderRadius: 2 },
+
+  // ── Reward block ──────────────────────────────────────────────────
+  rewardBlock: {
+    paddingTop: 10, borderTopWidth: 1, borderTopColor: Colors.line,
+  },
+  rewardRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  rewardPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: Colors.s4, borderRadius: Radius.full,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: Colors.line,
+  },
+  rewardPillText: { fontSize: 11, fontFamily: Fonts.semiBold, color: Colors.t2 },
+  rewardPillEarned: { backgroundColor: `${Colors.up}12`, borderColor: `${Colors.up}30` },
+  rewardPillTextEarned: { color: Colors.up },
+  rewardPillBonus: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: `${Colors.flat}12`, borderRadius: Radius.full,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: `${Colors.flat}30`,
+  },
+  rewardPillBonusText: { fontSize: 11, fontFamily: Fonts.semiBold, color: Colors.flat },
+
+  // ── All Campaigns Complete ────────────────────────────────────────
+  completedCard: {
+    alignItems: 'center', paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.xxl, marginBottom: Spacing.lg,
+  },
+  completedTrophyWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: `${Colors.flat}15`, borderWidth: 1.5,
+    borderColor: `${Colors.flat}35`, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
+  },
+  completedTitle: {
+    fontSize: 22, fontFamily: Fonts.displayBold, color: Colors.bone,
+    marginBottom: 10, letterSpacing: -0.5,
+  },
+  completedSub: {
+    fontSize: 14, fontFamily: Fonts.regular, color: Colors.t2,
+    textAlign: 'center', lineHeight: 20, marginBottom: 16,
+  },
+  completedStats: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch',
+    backgroundColor: Colors.s3, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.line,
+    paddingHorizontal: 24, paddingVertical: 16, marginTop: 12,
+  },
+  completedStat:        { flex: 1, alignItems: 'center' },
+  completedStatNum:     { fontSize: 28, fontFamily: Fonts.monoBold, color: Colors.bone, lineHeight: 34 },
+  completedStatLabel:   { fontSize: 11, fontFamily: Fonts.regular, color: Colors.t3, marginTop: 2 },
+  completedStatDivider: { width: 1, height: 36, backgroundColor: Colors.line, marginHorizontal: 16 },
 });

@@ -1,4 +1,3 @@
-// mobile/components/ui/Button.tsx
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, TouchableOpacityProps, ViewStyle } from 'react-native';
 import { Colors, Fonts, Radius } from '../../../mobilee/constants/theme';
 

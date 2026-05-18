@@ -1,4 +1,3 @@
-// mobile/components/SyncStatusIndicator.tsx
 /**
  * Маленький бейдж, показывающий кол-во несинкнутых тренировок.
  * Показывается только когда pendingCount > 0.

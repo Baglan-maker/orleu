@@ -1,6 +1,5 @@
-# app/models/gamification.py
 import uuid
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -46,11 +45,20 @@ class UserProgress(Base):
     coins               = Column(Integer, default=0)
     current_streak      = Column(Integer, default=0)
     longest_streak      = Column(Integer, default=0)
-    current_campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True)
-    current_chapter_id  = Column(UUID(as_uuid=True), ForeignKey("campaign_chapters.id"), nullable=True)
-    campaign_path       = Column(String(1), nullable=True)
-    last_workout_at     = Column(DateTime(timezone=True), nullable=True)
-    updated_at          = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    streak_freezes      = Column(Integer, default=0, nullable=False)
+    # When set, equals the date on which the +5% XP nutrition buff is usable.
+    # Earned by hitting protein goal today; consumed by the first workout that day.
+    nutrition_buff_date = Column(Date, nullable=True)
+    current_campaign_id      = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True)
+    current_chapter_id       = Column(UUID(as_uuid=True), ForeignKey("campaign_chapters.id"), nullable=True)
+    campaign_path            = Column(String(1), nullable=True)
+    total_workouts           = Column(Integer, default=0)
+    missions_completed_count = Column(Integer, default=0)
+    campaign_started_workouts = Column(Integer, default=0, nullable=False)
+    campaign_started_missions = Column(Integer, default=0, nullable=False)
+    last_workout_at          = Column(DateTime(timezone=True), nullable=True)
+    last_mission_reroll_at   = Column(DateTime(timezone=True), nullable=True)
+    updated_at               = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user             = relationship("User",            back_populates="progress")
     current_campaign = relationship("Campaign",        foreign_keys=[current_campaign_id])
@@ -127,6 +135,7 @@ class Achievement(Base):
     icon_key        = Column(String(50),  nullable=False)
     condition_type  = Column(String(50),  nullable=False)
     condition_value = Column(Integer,     nullable=False)
+    rarity          = Column(String(20),  nullable=False, default='common')
 
     user_achievements = relationship("UserAchievement", back_populates="achievement")
 

@@ -1,7 +1,7 @@
 """
 python -m app.seed_campaigns
-Запускать один раз после alembic upgrade head.
-Создаёт 2 кампании с главами.
+Run once after alembic upgrade head.
+Creates 2 campaigns with chapters.
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -12,23 +12,23 @@ from app.models import Campaign, CampaignChapter
 CAMPAIGNS = [
     {
         "name": "The Foundation",
-        "description": "Твой первый путь в зале. Построй фундамент силы и привычки тренироваться.",
+        "description": " Your first path in the gym. Build a foundation of strength and training habits.",
         "order_index": 1,
         "chapters": [
             {
                 "chapter_number": 1,
                 "title": "First Steps",
-                "narrative_text": "Каждое восхождение начинается с первого шага. Ты пришёл в зал — это уже победа.",
+                "narrative_text": "Every ascent begins with the first step. You came to the gym — that's already a victory.",
             },
             {
                 "chapter_number": 2,
                 "title": "Building Habits",
-                "narrative_text": "Регулярность важнее интенсивности. Три тренировки в неделю — и тело начнёт меняться.",
+                "narrative_text": "Consistency is more important than intensity. Three workouts a week — and your body will start to change.",
             },
             {
                 "chapter_number": 3,
                 "title": "The Crossroads",
-                "narrative_text": "Ты окреп. Впереди развилка: сила или выносливость?",
+                "narrative_text": "You've grown stronger. Ahead lies a fork: strength or endurance?",
                 "has_branch": True,
                 "branch_a_label": "Power Path",
                 "branch_b_label": "Endurance Path",
@@ -36,34 +36,34 @@ CAMPAIGNS = [
             {
                 "chapter_number": 4,
                 "title": "Momentum",
-                "narrative_text": "Ты выбрал свой путь. Теперь — набирай темп. Каждая тренировка приближает к цели.",
+                "narrative_text": "You've chosen your path. Now — build momentum. Every workout brings you closer to your goal.",
             },
             {
                 "chapter_number": 5,
                 "title": "The Ascent",
-                "narrative_text": "Фундамент заложен. Ты уже не новичок — ты атлет. Впереди — новые вершины.",
+                "narrative_text": "The foundation is laid. You're no longer a novice — you're an athlete. New peaks await.",
             },
         ],
     },
     {
         "name": "Iron Chronicles",
-        "description": "Для тех, кто уже знает вкус железа. Время выйти на новый уровень.",
+        "description": "For those who already know the taste of iron. Time to reach a new level.",
         "order_index": 2,
         "chapters": [
             {
                 "chapter_number": 1,
                 "title": "Return to Iron",
-                "narrative_text": "Зал помнит тебя. Пора вернуться к штанге и показать, на что ты способен.",
+                "narrative_text": "The gym remembers you. Time to return to the barbell and show what you're capable of.",
             },
             {
                 "chapter_number": 2,
                 "title": "Pushing Limits",
-                "narrative_text": "Комфортная зона — враг прогресса. Добавь вес, добавь повторения.",
+                "narrative_text": "The comfort zone is the enemy of progress. Add weight, add reps.",
             },
             {
                 "chapter_number": 3,
                 "title": "The Fork",
-                "narrative_text": "Два пути к вершине: максимальная сила или объёмный тренинг.",
+                "narrative_text": "Two paths to the peak: maximum strength or volume training.",
                 "has_branch": True,
                 "branch_a_label": "Strength Focus",
                 "branch_b_label": "Volume Focus",
@@ -71,12 +71,12 @@ CAMPAIGNS = [
             {
                 "chapter_number": 4,
                 "title": "Mastery",
-                "narrative_text": "Техника, контроль, прогрессия. Мастерство — это терпение и дисциплина.",
+                "narrative_text": "Technique, control, progression. Mastery is patience and discipline.",
             },
             {
                 "chapter_number": 5,
                 "title": "Peak Form",
-                "narrative_text": "Ты на пике. Всё что ты делал — привело тебя сюда. Легенды не останавливаются.",
+                "narrative_text": "You're at your peak. Everything you did — brought you here. Legends don't stop.",
             },
         ],
     },

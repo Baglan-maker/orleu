@@ -1,4 +1,3 @@
-// mobile/services/api.ts
 /**
  * Axios instance с автоматическим:
  * 1. Прикреплением access token к каждому запросу
@@ -10,6 +9,7 @@ import {
   getAccessToken,
   getRefreshToken,
   saveAccessToken,
+  saveRefreshToken,
   clearAll,
 } from './storage';
 
@@ -17,13 +17,16 @@ import {
 // Для разработки: IP твоего компьютера в локальной сети
 // Узнать: в терминале ipconfig → IPv4 адрес
 // Expo на телефоне не может обратиться к localhost напрямую
-const BASE_URL = __DEV__
-  ? 'http://192.168.0.100:8080'   // ← замени на свой IP
-  : 'https://api.orleu.app';       // production (пока не нужно)
+const BASE_URL = "https://orleu.onrender.com"
+
+
+// __DEV__
+//   ? 'http://192.168.100.68:8080'   // ← замени на свой IP
+//   : 'https://api.orleu.app';       // production (пока не нужно)
 
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10_000,
+  timeout: 60_000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -42,6 +45,7 @@ export function registerForceLogout(fn: () => void) { _forceLogout = fn; }
 
 // ─── Response interceptor — обновляем токен при 401 ──────────────
 let isRefreshing = false;
+const MAX_REFRESH_QUEUE = 50;
 // очередь запросов ожидающих обновления токена
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -71,6 +75,9 @@ api.interceptors.response.use(
 
     // Если уже идёт обновление токена — ставим запрос в очередь
     if (isRefreshing) {
+      if (failedQueue.length >= MAX_REFRESH_QUEUE) {
+        return Promise.reject(new Error('Too many queued requests during token refresh'));
+      }
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       }).then((token) => {
@@ -84,15 +91,27 @@ api.interceptors.response.use(
 
     try {
       const refreshToken = await getRefreshToken();
-      if (!refreshToken) throw new Error('No refresh token');
+      if (!refreshToken) {
+        // No saved refresh token — definitely signed out
+        processQueue(new Error('No refresh token'), null);
+        await clearAll();
+        _forceLogout?.();
+        return Promise.reject(error);
+      }
 
       // Запрос на обновление — без interceptors чтобы не зациклиться
       const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, {
         refresh_token: refreshToken,
       });
 
-      const newAccessToken: string = data.access_token;
+      const newAccessToken: string  = data.access_token;
+      const newRefreshToken: string | undefined = data.refresh_token;
+
+      // Persist BOTH tokens — rotation invalidates the old refresh on the server
       await saveAccessToken(newAccessToken);
+      if (newRefreshToken) {
+        await saveRefreshToken(newRefreshToken);
+      }
 
       processQueue(null, newAccessToken);
 
@@ -100,8 +119,25 @@ api.interceptors.response.use(
       original.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(original);
 
-    } catch (refreshError) {
-      // Refresh token тоже протух — разлогиниваем
+    } catch (refreshError: unknown) {
+      // Distinguish a true auth failure (refresh token rejected by server)
+      // from a transient network error (no response at all). The former means
+      // the session is dead and we must log out. The latter is recoverable —
+      // do NOT clear tokens, just reject so the caller can retry later.
+      const ax = refreshError as { response?: { status?: number }; code?: string; message?: string };
+      const isNetworkError =
+        !ax.response ||
+        ax.code === 'ERR_NETWORK' ||
+        ax.code === 'ECONNABORTED' ||
+        ax.message === 'Network Error';
+
+      if (isNetworkError) {
+        // Keep tokens — user may regain connectivity and resume the session
+        processQueue(refreshError, null);
+        return Promise.reject(refreshError);
+      }
+
+      // Genuine auth failure (401/403 from /refresh) — refresh token is dead
       processQueue(refreshError, null);
       await clearAll();
       _forceLogout?.();
@@ -130,4 +166,19 @@ export const authApi = {
     api.post('/api/auth/logout', { refresh_token: refreshToken }),
 
   me: () => api.get('/api/auth/me'),
+
+  updateMe: (data: {
+    name?: string;
+    primary_goal?: 'strength' | 'hypertrophy' | 'endurance';
+    experience_level?: 'beginner' | 'intermediate' | 'advanced';
+    avatar_theme_id?: number;
+  }) => api.patch('/api/auth/me', data),
+
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.post('/api/auth/change-password', data),
+
+  deleteMe: (data: { password: string }) =>
+    api.delete('/api/auth/me', { data }),
+
+  exportData: () => api.get('/api/auth/export'),
 };

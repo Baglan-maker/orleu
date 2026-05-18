@@ -74,8 +74,14 @@ class RefreshRequest(BaseModel):
 
 
 class AccessTokenResponse(BaseModel):
-    access_token: str
-    token_type:   str = "bearer"
+    """
+    Returned by /api/auth/refresh.
+    Includes a freshly-rotated refresh_token: the previous one is invalidated
+    on the server. This way an active user stays signed in indefinitely.
+    """
+    access_token:  str
+    refresh_token: str
+    token_type:    str = "bearer"
 
 
 class MessageResponse(BaseModel):
@@ -83,4 +89,24 @@ class MessageResponse(BaseModel):
 
 
 class UpdateMeRequest(BaseModel):
-    onboarding_done: bool | None = None
+    onboarding_done:  bool | None = None
+    name:             str | None = None
+    primary_goal:     Literal["strength", "hypertrophy", "endurance"] | None = None
+    experience_level: Literal["beginner", "intermediate", "advanced"] | None = None
+    avatar_theme_id:  int | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        return v
+
+
+class DeleteMeRequest(BaseModel):
+    password: str

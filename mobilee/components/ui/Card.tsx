@@ -1,4 +1,3 @@
-// mobile/components/ui/Card.tsx
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import { Colors, Radius, Spacing } from '../../../mobilee/constants/theme';
 

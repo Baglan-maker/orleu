@@ -1,11 +1,10 @@
-// mobile/services/workoutApi.ts
 /**
- * Все API вызовы для упражнений и тренировок.
- * Каждая функция соответствует одному endpoint на бэкенде.
+ * All API calls for exercises and workouts.
+ * Each function corresponds to one endpoint on the backend.
  */
 import { api } from './api';
 
-// ─── Типы (ответы от сервера) ─────────────────────────────────────
+// ─── Types (server responses) ─────────────────────────────────────
 export interface ExerciseResponse {
   id:           string;
   name:         string;
@@ -15,12 +14,21 @@ export interface ExerciseResponse {
   is_custom:    boolean;
 }
 
+export interface SetEntry {
+  set_number: number;
+  reps:       number;
+  weight_kg:  number;
+}
+
 export interface WorkoutExercisePayload {
   exercise_id: string;
-  sets:        number;
-  reps:        number;
-  weight_kg:   number;
   order_index: number;
+  // Per-set format (preferred)
+  sets_data?:  SetEntry[];
+  // Legacy flat format (backward compat)
+  sets?:       number;
+  reps?:       number;
+  weight_kg?:  number;
 }
 
 export interface CreateWorkoutPayload {
@@ -38,6 +46,7 @@ export interface WorkoutExerciseResponse {
   sets:          number;
   reps:          number;
   weight_kg:     number;
+  sets_data:     SetEntry[] | null;
   notes:         string | null;
   order_index:   number;
   total_volume:  number;
@@ -48,6 +57,21 @@ export interface AchievementEarned {
   name:        string;
   description: string;
   icon_key:    string;
+}
+
+export interface PRResult {
+  exercise_id:   string;
+  exercise_name: string;
+  new_weight:    number;
+  prev_weight:   number;
+  delta:         number;
+}
+
+export interface ChapterCompleted {
+  chapter_number:    number;
+  xp:                number;
+  coins:             number;
+  campaign_complete: boolean;
 }
 
 export interface WorkoutResponse {
@@ -63,9 +87,31 @@ export interface WorkoutResponse {
   new_level:        number | null;
   leveled_up:       boolean;
   achievements:     AchievementEarned[];
+  new_prs:          PRResult[];
+  chapter_completed: ChapterCompleted | null;
   created_at:       string;
   updated_at:       string;
 }
+
+export interface PRCurrentItem {
+  exercise_id:    string;
+  exercise_name:  string;
+  muscle_group:   string;
+  weight_kg:      number;
+  achieved_at:    string;
+  total_pr_count: number;
+}
+
+// ─── PR API ───────────────────────────────────────────────────────
+export const prsApi = {
+  getAll: () =>
+    api.get<PRCurrentItem[]>('/api/prs'),
+
+  getHistory: (exerciseId: string) =>
+    api.get<{ id: string; weight_kg: number; achieved_at: string }[]>(
+      `/api/prs/${exerciseId}`
+    ),
+};
 
 // List endpoint returns a lighter object (no exercises array)
 export interface WorkoutListItem {

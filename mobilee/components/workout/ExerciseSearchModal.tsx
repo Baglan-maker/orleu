@@ -1,4 +1,3 @@
-// mobile/components/workout/ExerciseSearchModal.tsx
 /**
  * Модалка поиска упражнений.
  * 1. Ищет по SQLite кэшу (exercise_library_cache)
@@ -18,7 +17,7 @@ import Svg, { Line, Path, Polyline, Circle } from 'react-native-svg';
 import { Colors, Fonts, Radius, Spacing } from '../../constants/theme';
 import { Button } from '../ui/Button';
 import { Input  } from '../ui/Input';
-import { searchExercises } from '../../services/database';
+import { searchExercises, cacheExercises } from '../../services/database';
 import { exerciseApi } from '../../services/workoutApi';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -36,43 +35,15 @@ export interface ExerciseItem {
   category:     string;
   is_custom?:   boolean;
 }
-export interface SetData {
-  exercise: ExerciseItem;
-  sets:     number;
-  reps:     number;
-  weight:   number;
-}
-
 interface Props {
   visible:  boolean;
   onClose:  () => void;
-  onAdd:    (data: SetData) => void;
+  onAdd:    (exercise: ExerciseItem) => void;
 }
 
-// ─── Fallback list (когда кэш пустой / нет сети) ──────────────────
-const FALLBACK_LIBRARY: ExerciseItem[] = [
-  { id: 'bp',    name: 'Bench Press',         muscle_group: 'Chest',     category: 'compound'   },
-  { id: 'ibp',   name: 'Incline Bench Press', muscle_group: 'Chest',     category: 'compound'   },
-  { id: 'cf',    name: 'Cable Fly',           muscle_group: 'Chest',     category: 'isolation'  },
-  { id: 'dl',    name: 'Deadlift',            muscle_group: 'Back',      category: 'compound'   },
-  { id: 'pr',    name: 'Pull-ups',            muscle_group: 'Back',      category: 'bodyweight' },
-  { id: 'br',    name: 'Barbell Row',         muscle_group: 'Back',      category: 'compound'   },
-  { id: 'lpd',   name: 'Lat Pulldown',        muscle_group: 'Back',      category: 'compound'   },
-  { id: 'sq',    name: 'Squat',               muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'leg',   name: 'Leg Press',           muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'rdl',   name: 'Romanian Deadlift',   muscle_group: 'Legs',      category: 'compound'   },
-  { id: 'hc',    name: 'Hamstring Curl',      muscle_group: 'Legs',      category: 'isolation'  },
-  { id: 'le',    name: 'Leg Extension',       muscle_group: 'Legs',      category: 'isolation'  },
-  { id: 'ohp',   name: 'Overhead Press',      muscle_group: 'Shoulders', category: 'compound'   },
-  { id: 'lr',    name: 'Lateral Raise',       muscle_group: 'Shoulders', category: 'isolation'  },
-  { id: 'bbc',   name: 'Barbell Curl',        muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'dbc',   name: 'Dumbbell Curl',       muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'tri',   name: 'Tricep Pushdown',     muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'skul',  name: 'Skull Crusher',       muscle_group: 'Arms',      category: 'isolation'  },
-  { id: 'dips',  name: 'Dips',               muscle_group: 'Arms',      category: 'bodyweight' },
-  { id: 'pl',    name: 'Plank',              muscle_group: 'Core',      category: 'bodyweight' },
-  { id: 'crn',   name: 'Crunches',            muscle_group: 'Core',      category: 'bodyweight' },
-];
+// FALLBACK_LIBRARY removed — its hardcoded IDs caused zombie workouts that could never sync.
+// When both SQLite cache and API are unavailable, the user sees an empty state with a Retry
+// button instead of a misleading "you can pick exercises" list.
 
 const MUSCLE_GROUPS = ['All', 'Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
 
@@ -81,14 +52,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   const [filter,      setFilter]      = useState('All');
   const [results,     setResults]     = useState<ExerciseItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [useFallback, setUseFallback] = useState(false);
+  const [useFallback,    setUseFallback]    = useState(false);
 
-  const [selected, setSelected] = useState<ExerciseItem | null>(null);
-  const [sets,     setSets]     = useState('3');
-  const [reps,     setReps]     = useState('10');
-  const [weight,   setWeight]   = useState('0');
 
-  const [showCustom,   setShowCustom]   = useState(false);
+  const [showCustom,     setShowCustom]     = useState(false);
+  const [customError,    setCustomError]    = useState<string | null>(null);
   const [customName,   setCustomName]   = useState('');
   const [customMuscle, setCustomMuscle] = useState('Chest');
   const [savingCustom, setSavingCustom] = useState(false);
@@ -101,7 +69,7 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
     try {
       // Step 1: try SQLite cache (uses LIKE query, case-insensitive filter)
       const rows = await searchExercises(q, filterLower);
-      if (rows.length > 0 || q.trim()) {
+      if (rows.length > 0) {
         setResults(rows.map(r => ({
           id:           r.id,
           name:         r.name,
@@ -147,12 +115,11 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         setResults(list);
         setUseFallback(false);
       } catch {
-        // Step 3: last resort — hardcoded list (IDs won't work with API)
+        // Step 3: nothing to show — backend unreachable AND cache empty.
+        // We deliberately do NOT use FALLBACK_LIBRARY here — its hardcoded IDs
+        // can never sync to the backend, creating zombie workouts.
         setUseFallback(true);
-        let list = FALLBACK_LIBRARY;
-        if (f !== 'All') list = list.filter(e => e.muscle_group === f);
-        if (q.trim()) list = list.filter(e => e.name.toLowerCase().includes(q.toLowerCase()));
-        setResults(list);
+        setResults([]);
       }
     } finally {
       setIsSearching(false);
@@ -166,18 +133,10 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
   }, [query, filter, visible, runSearch]);
 
   function selectExercise(ex: ExerciseItem) {
-    setSelected(ex);
-    setShowCustom(false);
-  }
-
-  function handleAdd() {
-    if (!selected) return;
-    onAdd({
-      exercise: selected,
-      sets:   parseInt(sets)     || 3,
-      reps:   parseInt(reps)     || 10,
-      weight: parseFloat(weight) || 0,
-    });
+    // Defensive: results should be empty when useFallback is true (FALLBACK_LIBRARY removed),
+    // so this branch is unreachable now. Kept as a safety net.
+    if (useFallback) return;
+    onAdd(ex);
     reset();
     onClose();
   }
@@ -192,6 +151,14 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         muscle_group: customMuscle,
         category:     'compound',
       });
+      // Сохраняем в SQLite чтобы поиск находил упражнение без сети
+      await cacheExercises([{
+        id:           data.id,
+        name:         data.name,
+        muscle_group: data.muscle_group,
+        category:     data.category,
+        is_custom:    1,
+      }]);
       selectExercise({
         id:           data.id,
         name:         data.name,
@@ -200,14 +167,9 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         is_custom:    true,
       });
     } catch {
-      // Если API недоступен — используем временный ID
-      selectExercise({
-        id:           `custom_${Date.now()}`,
-        name:         customName.trim(),
-        muscle_group: customMuscle,
-        category:     'compound',
-        is_custom:    true,
-      });
+      // Don't create a fake offline ID — it will cause a FK violation on the backend.
+      // The user must retry when connected.
+      setCustomError('No connection. Connect to the internet to create a custom exercise.');
     } finally {
       setSavingCustom(false);
     }
@@ -215,9 +177,9 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
 
   function reset() {
     setQuery(''); setFilter('All');
-    setSelected(null); setShowCustom(false);
-    setSets('3'); setReps('10'); setWeight('0');
+    setShowCustom(false);
     setCustomName(''); setCustomMuscle('Chest');
+    setCustomError(null);
     setResults([]);
   }
 
@@ -232,61 +194,13 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
         <View style={s.handle}/>
 
         <View style={s.topBar}>
-          <Text style={s.title}>
-            {selected ? selected.name : 'Add Exercise'}
-          </Text>
+          <Text style={s.title}>Add Exercise</Text>
           <TouchableOpacity onPress={handleClose} style={s.closeBtn}>
             <IClose/>
           </TouchableOpacity>
         </View>
 
-        {/* ══ STATE: Exercise selected → Set entry ══ */}
-        {selected ? (
-          <ScrollView contentContainerStyle={s.setEntry} keyboardShouldPersistTaps="handled">
-            <View style={s.exPill}>
-              <View style={s.exPillDot}><IDumbbell/></View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.exPillName}>{selected.name}</Text>
-                <Text style={s.exPillMuscle}>{selected.muscle_group}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setSelected(null)}>
-                <Text style={{ fontSize: 12, color: Colors.cr }}>Change</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[s.sectionLbl, { marginBottom: 12 }]}>SET DETAILS</Text>
-            <View style={s.setRow}>
-              {[
-                { label: 'SETS',  val: sets,   setter: setSets   },
-                { label: 'REPS',  val: reps,   setter: setReps   },
-                { label: 'KG',    val: weight,  setter: setWeight },
-              ].map(f => (
-                <View key={f.label} style={{ flex: 1 }}>
-                  <Text style={s.setFieldLbl}>{f.label}</Text>
-                  <TextInput
-                    style={s.setInput}
-                    keyboardType="numeric"
-                    value={f.val}
-                    onChangeText={f.setter}
-                    selectTextOnFocus
-                  />
-                </View>
-              ))}
-            </View>
-
-            <View style={s.summary}>
-              <Text style={s.summaryText}>
-                {parseInt(sets)||0} × {parseInt(reps)||0} reps @ {parseFloat(weight)||0} kg
-              </Text>
-              <Text style={s.summaryVol}>
-                {Math.round((parseInt(sets)||0)*(parseInt(reps)||0)*(parseFloat(weight)||0))} kg total volume
-              </Text>
-            </View>
-
-            <Button label="Add to workout" onPress={handleAdd} style={{ marginTop: 8 }}/>
-          </ScrollView>
-
-        ) : showCustom ? (
+        {showCustom ? (
           /* ══ STATE: Create custom exercise ══ */
           <ScrollView contentContainerStyle={s.setEntry} keyboardShouldPersistTaps="handled">
             <Text style={[s.sectionLbl, { marginBottom: 12 }]}>CREATE CUSTOM</Text>
@@ -294,9 +208,12 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
               label="Exercise name"
               placeholder="e.g. Banded Hip Thrust"
               value={customName}
-              onChangeText={setCustomName}
+              onChangeText={v => { setCustomName(v); setCustomError(null); }}
               autoFocus
             />
+            {customError && (
+              <Text style={s.customError}>{customError}</Text>
+            )}
             <Text style={[s.sectionLbl, { marginBottom: 10 }]}>MUSCLE GROUP</Text>
             <View style={s.muscleGrid}>
               {MUSCLE_GROUPS.filter(g => g !== 'All').map(g => (
@@ -353,12 +270,6 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
               ))}
             </ScrollView>
 
-            {useFallback && (
-              <View style={s.offlineBanner}>
-                <Text style={s.offlineText}>Offline cache — connect to sync full library</Text>
-              </View>
-            )}
-
             <ScrollView style={s.list} keyboardShouldPersistTaps="handled">
               {results.length > 0 ? (
                 results.map(ex => (
@@ -374,6 +285,20 @@ export function ExerciseSearchModal({ visible, onClose, onAdd }: Props) {
                     <IArrow/>
                   </TouchableOpacity>
                 ))
+              ) : !isSearching && useFallback ? (
+                <View style={s.empty}>
+                  <Text style={s.emptyTitle}>Can't load exercises</Text>
+                  <Text style={s.emptySub}>
+                    Connect to the internet to load the exercise library.
+                  </Text>
+                  <TouchableOpacity
+                    style={s.createBtn}
+                    onPress={() => runSearch(query, filter)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.createBtnText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
               ) : !isSearching && query.trim() ? (
                 <View style={s.empty}>
                   <Text style={s.emptyTitle}>"{query}" not found</Text>
@@ -459,4 +384,5 @@ const s = StyleSheet.create({
   muscleChip:     { paddingHorizontal: 14, paddingVertical: 9, borderRadius: Radius.full, backgroundColor: Colors.s3, borderWidth: 1, borderColor: Colors.line },
   muscleChipText: { fontSize: 13, fontFamily: Fonts.semiBold, color: Colors.t3 },
   customActions:  { flexDirection: 'row', gap: 10, marginTop: 8 },
+  customError:    { fontSize: 12, fontFamily: Fonts.regular, color: Colors.cr, marginBottom: 12 },
 });

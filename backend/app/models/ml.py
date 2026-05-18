@@ -1,4 +1,3 @@
-# app/models/ml.py
 from sqlalchemy import Boolean, Column, Date, Float, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship

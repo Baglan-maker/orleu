@@ -1,4 +1,3 @@
-// mobile/app/(auth)/login.tsx
 import { useState } from 'react';
 import {
   KeyboardAvoidingView, Platform, ScrollView,
@@ -8,9 +7,10 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthStore } from '../../store/authStore';
-import { Colors, Fonts, Spacing } from '../../constants/theme';
+import { Colors, Fonts, Spacing, Radius } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { Input  } from '../../components/ui/Input';
+import { validateEmail } from '../../services/validation';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -20,15 +20,18 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading,  setLoading]  = useState(false);
 
+  const emailValidation = validateEmail(email);
+  const isEmailValid = emailValidation.valid;
+
   async function handleLogin() {
-    if (!email.trim() || !password.trim()) return;
+    if (!isEmailValid || !password.trim()) return;
     clearError();
     setLoading(true);
     try {
       await login(email.trim().toLowerCase(), password);
-      // Редирект произойдёт автоматически через auth guard в _layout.tsx
+      // Auth guard will redirect automatically
     } catch {
-      // Ошибка уже сохранена в store
+      // Error already saved in store
     } finally {
       setLoading(false);
     }
@@ -54,14 +57,20 @@ export default function LoginScreen() {
 
           {/* Form */}
           <View style={styles.form}>
-            <Input
-              label="Email"
-              placeholder="you@example.com"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              textContentType="emailAddress"
-            />
+            <View style={styles.inputWrapper}>
+              <Input
+                label="Email"
+                placeholder="you@example.com"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                textContentType="emailAddress"
+              />
+            </View>
+            {email.length > 0 && !isEmailValid && (
+              <Text style={styles.fieldError}>{emailValidation.error}</Text>
+            )}
+
             <Input
               label="Password"
               placeholder="••••••••"
@@ -83,6 +92,7 @@ export default function LoginScreen() {
               label="Continue"
               loading={loading}
               onPress={handleLogin}
+              disabled={!isEmailValid || !password.trim()}
             />
 
             <TouchableOpacity
@@ -139,6 +149,38 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
+  },
+  inputWrapper: {
+    position: 'relative',
+    marginBottom: 4,
+  },
+  statusIcon: {
+    position: 'absolute',
+    right: 12,
+    top: 38,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusValid: {
+    backgroundColor: 'rgba(107,158,107,0.15)',
+  },
+  statusInvalid: {
+    backgroundColor: 'rgba(200,52,58,0.15)',
+  },
+  statusX: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: Colors.cr,
+  },
+  fieldError: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: Colors.cr,
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
   errorBox: {
     backgroundColor: Colors.crLo,
