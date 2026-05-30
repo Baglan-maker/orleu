@@ -34,6 +34,19 @@ EXPERIENCE_MULTIPLIER: dict[str, float] = {
     "advanced":     2.5,
 }
 
+# ML trend → adaptive difficulty multiplier applied to the final mission target.
+# This is the core adaptive-difficulty mechanism: the nightly LightGBM trend
+# prediction scales how hard a newly accepted mission is.
+#   improving → 110-115% of baseline   (push harder while progressing)
+#   plateau   → 100%                    (hold steady)
+#   declining → 75-85%                  (ease off to re-engage)
+# Cold-start users (no prediction yet) default to neutral 1.0.
+TREND_TARGET_RANGE: dict[str, tuple[float, float]] = {
+    "improving": (1.10, 1.15),
+    "plateau":   (1.00, 1.00),
+    "declining": (0.75, 0.85),
+}
+
 # Mission type affinity per primary_goal.
 # Lower rank = shown first in the available list.
 # Gives each goal a clear "personality" in mission selection without hiding missions.
@@ -70,6 +83,23 @@ def _reroll_status(progress: UserProgress | None, now: datetime) -> tuple[bool, 
     if now >= next_at:
         return True, None
     return False, next_at
+
+
+def _latest_trend(user_id: UUID, db: Session) -> str | None:
+    """Most recent nightly ML trend for the user, or None if never predicted."""
+    pred = (
+        db.query(MlPrediction)
+        .filter(MlPrediction.user_id == user_id)
+        .order_by(MlPrediction.prediction_date.desc())
+        .first()
+    )
+    return pred.trend if pred else None
+
+
+def _trend_multiplier(trend: str | None) -> float:
+    """Sample the adaptive difficulty multiplier for the trend (uniform over its range)."""
+    lo, hi = TREND_TARGET_RANGE.get(trend or "", (1.0, 1.0))
+    return random.uniform(lo, hi)
 
 
 def _to_user_mission_out(um: UserMission) -> UserMissionOut:
@@ -268,10 +298,11 @@ def accept_mission(
     if len(active_count) >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
-    # Scale target based on experience level + player level.
-    # Experience multiplier raises the baseline so advanced players face harder
-    # missions from day one, even at level 1. Level-based difficulty_scale then
-    # compounds on top as the player progresses.
+    # Scale target in three layers:
+    #   1. Experience tier raises the baseline (advanced players start harder).
+    #   2. Player level compounds difficulty_scale as they progress.
+    #   3. ML trend applies the adaptive multiplier (core adaptive-difficulty
+    #      mechanism): improving → harder, declining → easier, plateau → neutral.
     # Cap at 5× the (experience-adjusted) base to prevent impossible targets.
     progress = db.query(UserProgress).filter(
         UserProgress.user_id == current_user.id
@@ -279,7 +310,13 @@ def accept_mission(
     exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
     level = progress.level if progress else 1
     capped_level = min(level, 50)
-    raw_target = template.base_target * exp_mult * (template.difficulty_scale ** max(0, capped_level - 1))
+    trend_mult = _trend_multiplier(_latest_trend(current_user.id, db))
+    raw_target = (
+        template.base_target
+        * exp_mult
+        * (template.difficulty_scale ** max(0, capped_level - 1))
+        * trend_mult
+    )
     max_target = template.base_target * exp_mult * 5.0
     adjusted_target = min(raw_target, max_target)
 
@@ -393,12 +430,13 @@ def reroll_mission(
     # Mark the old mission as rerolled so progress history is preserved
     target.status = "rerolled"
 
-    # Scale target same way as accept (experience × level)
+    # Scale target same way as accept (experience × level × ML trend)
     exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
     capped_level = min(progress.level, 50)
+    trend_mult = _trend_multiplier(_latest_trend(current_user.id, db))
     raw_target = new_template.base_target * exp_mult * (
         new_template.difficulty_scale ** max(0, capped_level - 1)
-    )
+    ) * trend_mult
     max_target = new_template.base_target * exp_mult * 5.0
     adjusted_target = min(raw_target, max_target)
 
