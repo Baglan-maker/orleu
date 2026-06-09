@@ -78,6 +78,8 @@ class MissionTemplate(Base):
     base_coins           = Column(Integer, nullable=False)
     campaign_path_filter = Column(String(1), nullable=True)
     duration_days        = Column(Integer, nullable=False, default=7)
+    # Which ML trend this mission is most relevant for (None = universal).
+    trend_focus          = Column(String(20), nullable=True)
 
     user_missions = relationship("UserMission", back_populates="template")
 
@@ -93,6 +95,9 @@ class UserMission(Base):
     status              = Column(String(20), default="active")
     xp_awarded          = Column(Integer, nullable=True)
     coins_awarded       = Column(Integer, nullable=True)
+    # Adaptive-difficulty audit: what drove this mission's target.
+    applied_trend       = Column(String(20), nullable=True)
+    baseline_value      = Column(Float, nullable=True)
     started_at          = Column(DateTime(timezone=True), server_default=func.now())
     expires_at          = Column(DateTime(timezone=True), nullable=False)
     completed_at        = Column(DateTime(timezone=True), nullable=True)

@@ -123,6 +123,10 @@ export default function DebugScreen() {
   // ── Full reset
   const resetFb = useFeedback();
 
+  // ── ML trend (demo)
+  const trendFb   = useFeedback();
+  const nightlyFb = useFeedback();
+
   // ─── Helpers ──────────────────────────────────────────────────
   async function timeTravelPost(payload: Record<string, unknown>, fb: ReturnType<typeof useFeedback>) {
     fb.setLoading();
@@ -209,6 +213,30 @@ export default function DebugScreen() {
     }
   }
 
+  // ─── ML trend (demo) ──────────────────────────────────────────
+  async function handleSetTrend(trend: 'improving' | 'plateau' | 'declining') {
+    trendFb.setLoading();
+    try {
+      await api.post('/api/debug/set-trend', { trend, make_eligible: true });
+      trendFb.setSuccess(`Trend set: ${trend} — open Missions`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Request failed';
+      trendFb.setError(msg);
+    }
+  }
+
+  async function handleRunNightly() {
+    nightlyFb.setLoading();
+    try {
+      const res = await api.post('/api/debug/run-ml');
+      const n = (res.data as { processed_users?: number })?.processed_users ?? 0;
+      nightlyFb.setSuccess(`Nightly ML ran — ${n} user(s) processed`);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Request failed';
+      nightlyFb.setError(msg);
+    }
+  }
+
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       {/* Header */}
@@ -232,6 +260,18 @@ export default function DebugScreen() {
           <ActionButton label="30 workouts" onPress={() => handleSeedWorkouts(30)} loading={seedFb.fb.status === 'loading'} flex={1} />
         </View>
         <FeedbackLabel fb={seedFb.fb} />
+
+        {/* ── ML TREND (DEMO) ── */}
+        <SectionLabel label="ML TREND (DEMO)" />
+        <View style={s.row}>
+          <ActionButton label="Improving" onPress={() => handleSetTrend('improving')} loading={trendFb.fb.status === 'loading'} flex={1} />
+          <ActionButton label="Plateau"   onPress={() => handleSetTrend('plateau')}   loading={trendFb.fb.status === 'loading'} flex={1} />
+          <ActionButton label="Declining" onPress={() => handleSetTrend('declining')} loading={trendFb.fb.status === 'loading'} flex={1} />
+        </View>
+        <FeedbackLabel fb={trendFb.fb} />
+        <View style={s.spacer} />
+        <ActionButton label="Run Nightly ML Now" onPress={handleRunNightly} loading={nightlyFb.fb.status === 'loading'} />
+        <FeedbackLabel fb={nightlyFb.fb} />
 
         {/* ── SET COUNTERS ── */}
         <SectionLabel label="SET COUNTERS" />

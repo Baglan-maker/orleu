@@ -101,6 +101,8 @@ export interface UserMissionResponse {
   name:                string;
   type:                string;
   description:         string;
+  adaptation_note:     string | null;   // short "why this target" chip text, null if no ML trend yet
+  applied_trend:       MlTrend | null;  // trend that scaled this mission's target
   adjusted_target:     number;
   current_progress:    number;
   status:              string;

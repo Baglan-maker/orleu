@@ -148,6 +148,8 @@ class UserMissionOut(BaseModel):
     name:                str
     type:                str
     description:         str
+    adaptation_note:     Optional[str] = None  # short, user-facing "why this target"
+    applied_trend:       Optional[str] = None  # improving | plateau | declining | null
     adjusted_target:     float
     current_progress:    float
     status:              str

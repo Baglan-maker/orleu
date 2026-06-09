@@ -5,8 +5,13 @@ from uuid import UUID
 import random
 from datetime import datetime, timezone, timedelta
 
+from sqlalchemy import func
+
 from app.db.database import get_db
-from app.models import User, UserProgress, MissionTemplate, UserMission
+from app.models import (
+    User, UserProgress, MissionTemplate, UserMission,
+    Workout, WorkoutExercise, ExerciseLibrary,
+)
 from app.models.ml import MlPrediction
 from app.schemas.gamification import (
     MissionTemplateOut,
@@ -14,7 +19,7 @@ from app.schemas.gamification import (
     AvailableMissionsOut,
 )
 from app.services.dependencies import get_current_user
-from app.api.workouts import MISSION_TYPE_CATEGORY
+from app.api.workouts import MISSION_TYPE_CATEGORY, _extract_muscle_group
 
 router = APIRouter()
 
@@ -25,27 +30,63 @@ router = APIRouter()
 REROLL_COST_COINS = 30
 REROLL_COOLDOWN_DAYS = 7
 
-# Experience-based target multiplier: scales mission targets so beginners don't
-# hit walls and advanced users aren't bored. Applied to base_target before the
-# level-progression difficulty_scale exponentiation.
-EXPERIENCE_MULTIPLIER: dict[str, float] = {
-    "beginner":     1.0,
-    "intermediate": 1.5,
-    "advanced":     2.5,
+# ── Adaptive mission target model (personal baseline + visible trend band) ──
+#
+#   target = baseline × template_ratio × trend_factor   (then clamped + rounded)
+#
+#   baseline       = the user's OWN recent weekly figure for this mission type
+#                    (their average reps/volume/sessions per week). Users without
+#                    enough recent history fall back to a cold-start prior.
+#   template_ratio = base_target / TYPE_REFERENCE — how hard THIS template is
+#                    relative to a "normal" mission of its type (keeps Comeback
+#                    easy and Crusher hard regardless of personalisation).
+#   trend_factor   = the visible, deterministic ML adaptation (see TREND_FACTOR).
+
+# "Normal" weekly value per mission type. Used to (a) derive each template's
+# relative difficulty and (b) seed the cold-start baseline.
+TYPE_REFERENCE: dict[str, float] = {
+    "total_reps":       350.0,
+    "total_volume":     5000.0,
+    "workout_count":    4.0,
+    "muscle_sets":      16.0,
+    "unique_exercises": 8.0,
 }
 
-# ML trend → adaptive difficulty multiplier applied to the final mission target.
-# This is the core adaptive-difficulty mechanism: the nightly LightGBM trend
-# prediction scales how hard a newly accepted mission is.
-#   improving → 110-115% of baseline   (push harder while progressing)
-#   plateau   → 100%                    (hold steady)
-#   declining → 75-85%                  (ease off to re-engage)
-# Cold-start users (no prediction yet) default to neutral 1.0.
-TREND_TARGET_RANGE: dict[str, tuple[float, float]] = {
-    "improving": (1.10, 1.15),
-    "plateau":   (1.00, 1.00),
-    "declining": (0.75, 0.85),
+# Cold-start only: gentle nudge by self-reported experience when the user has no
+# usable history yet. Deliberately mild (never the old 2.5×) so count-based
+# missions stay sane.
+EXPERIENCE_FACTOR: dict[str, float] = {
+    "beginner":     1.0,
+    "intermediate": 1.25,
+    "advanced":     1.5,
 }
+
+# The adaptive layer: fixed, explainable multipliers driven by the nightly ML
+# trend. No randomness — the user can be told the exact change.
+TREND_FACTOR: dict[str, float] = {
+    "improving": 1.15,   # +15% — push while progressing
+    "plateau":   1.00,   #   0% — hold; plateau-breaker mission TYPES add novelty
+    "declining": 0.80,   # −20% — ease off to re-engage
+}
+
+# Short, user-facing chip text explaining what the ML changed and why.
+_TREND_NOTE: dict[str, str] = {
+    "improving": "Tuned +15% - you're improving",
+    "plateau":   "Held steady - plateau detected",
+    "declining": "Eased -20% - recovery week",
+}
+
+# Sanity bounds + rounding step per type so no target is ever absurd. (min, max, step)
+TYPE_BOUNDS: dict[str, tuple[float, float, int]] = {
+    "total_reps":       (50,  1500,  10),
+    "total_volume":     (500, 80000, 100),
+    "workout_count":    (1,   6,     1),
+    "muscle_sets":      (4,   35,    1),
+    "unique_exercises": (3,   20,    1),
+}
+
+# Min workouts in the last 14 days before we trust a personal baseline.
+MIN_WORKOUTS_FOR_PERSONAL = 3
 
 # Mission type affinity per primary_goal.
 # Lower rank = shown first in the available list.
@@ -96,10 +137,105 @@ def _latest_trend(user_id: UUID, db: Session) -> str | None:
     return pred.trend if pred else None
 
 
-def _trend_multiplier(trend: str | None) -> float:
-    """Sample the adaptive difficulty multiplier for the trend (uniform over its range)."""
-    lo, hi = TREND_TARGET_RANGE.get(trend or "", (1.0, 1.0))
-    return random.uniform(lo, hi)
+def _has_recent_history(user_id: UUID, db: Session) -> bool:
+    """True if the user logged enough workouts in the last 14 days to trust a personal baseline."""
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=14)
+    count = (
+        db.query(func.count(Workout.id))
+        .filter(Workout.user_id == user_id, Workout.workout_date >= cutoff)
+        .scalar()
+    ) or 0
+    return count >= MIN_WORKOUTS_FOR_PERSONAL
+
+
+def _personal_weekly(user_id: UUID, template: MissionTemplate, db: Session) -> float | None:
+    """The user's own recent weekly figure for this mission type, in native units.
+
+    Magnitude/count types average the last 14 days into a per-week number; unique
+    exercises use the most recent 7-day window. Returns None if no usable data.
+    """
+    today     = datetime.now(timezone.utc).date()
+    win_start = today - timedelta(days=14)
+    t = template.type
+
+    if t == "workout_count":
+        days = (
+            db.query(func.count(func.distinct(Workout.workout_date)))
+            .filter(Workout.user_id == user_id, Workout.workout_date >= win_start)
+            .scalar()
+        ) or 0
+        return days / 2.0
+
+    if t == "unique_exercises":
+        wk_start = today - timedelta(days=7)
+        n = (
+            db.query(func.count(func.distinct(WorkoutExercise.exercise_id)))
+            .join(Workout, Workout.id == WorkoutExercise.workout_id)
+            .filter(Workout.user_id == user_id, Workout.workout_date >= wk_start)
+            .scalar()
+        ) or 0
+        return float(n)
+
+    if t == "muscle_sets":
+        muscle = _extract_muscle_group(template.description_template)
+        q = (
+            db.query(WorkoutExercise.sets)
+            .join(Workout, Workout.id == WorkoutExercise.workout_id)
+            .join(ExerciseLibrary, ExerciseLibrary.id == WorkoutExercise.exercise_id)
+            .filter(Workout.user_id == user_id, Workout.workout_date >= win_start)
+        )
+        if muscle:
+            q = q.filter(func.lower(ExerciseLibrary.muscle_group) == muscle)
+        return sum(r.sets for r in q.all()) / 2.0
+
+    rows = (
+        db.query(WorkoutExercise.sets, WorkoutExercise.reps, WorkoutExercise.weight_kg)
+        .join(Workout, Workout.id == WorkoutExercise.workout_id)
+        .filter(Workout.user_id == user_id, Workout.workout_date >= win_start)
+        .all()
+    )
+    if t == "total_reps":
+        return sum(r.sets * r.reps for r in rows) / 2.0
+    if t == "total_volume":
+        return sum(r.sets * r.reps * (r.weight_kg or 0.0) for r in rows) / 2.0
+    return None
+
+
+def _round_to(value: float, step: int) -> int:
+    """Round to a friendly whole number for the mission target."""
+    if step <= 1:
+        return int(round(value))
+    return int(round(value / step) * step)
+
+
+def _compute_target(
+    user: User,
+    template: MissionTemplate,
+    db: Session,
+    trend: str | None,
+    has_history: bool,
+) -> tuple[float, float, bool]:
+    """target = baseline × template_ratio × trend_factor, clamped + rounded.
+
+    Returns (target, baseline_used, personalized).
+    """
+    t = template.type
+    lo, hi, step = TYPE_BOUNDS.get(t, (1, 100000, 1))
+    ref   = TYPE_REFERENCE.get(t) or (template.base_target or 1.0)
+    ratio = (template.base_target or ref) / ref if ref else 1.0
+
+    weekly = _personal_weekly(user.id, template, db) if has_history else None
+    if weekly and weekly > 0:
+        baseline, personalized = weekly, True
+    else:
+        exp = EXPERIENCE_FACTOR.get(user.experience_level or "beginner", 1.0)
+        baseline, personalized = ref * exp, False
+
+    factor = TREND_FACTOR.get(trend or "", 1.0)
+    raw    = baseline * ratio * factor
+    target = _round_to(max(lo, min(hi, raw)), step)
+    target = max(int(lo), min(int(hi), target))
+    return float(target), round(baseline, 2), personalized
 
 
 def _to_user_mission_out(um: UserMission) -> UserMissionOut:
@@ -112,6 +248,8 @@ def _to_user_mission_out(um: UserMission) -> UserMissionOut:
         name=tmpl.name,
         type=tmpl.type,
         description=desc,
+        adaptation_note=_TREND_NOTE.get(um.applied_trend) if um.applied_trend else None,
+        applied_trend=um.applied_trend,
         adjusted_target=um.adjusted_target,
         current_progress=um.current_progress,
         status=um.status,
@@ -182,27 +320,8 @@ def get_missions(
     ).first()
     user_path = progress.campaign_path if progress else None
 
-    # Experience multiplier for the preview_target shown on selection cards.
-    # preview_target = what the user will face at their current experience level, level 1 baseline.
-    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
-
-    available = []
-    for t in all_templates:
-        if t.id in active_template_ids:
-            continue
-        # Filter by campaign path: hide path-specific missions until user has chosen a path
-        if t.campaign_path_filter:
-            if not user_path or t.campaign_path_filter != user_path:
-                continue
-        tmpl_out = MissionTemplateOut.model_validate(t)
-        tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
-        tmpl_out.preview_target = round(t.base_target * exp_mult, 1)
-        available.append(tmpl_out)
-
-    # ML-driven + goal-based ordering.
-    # Primary key: goal affinity (mission types that match primary_goal come first).
-    # Secondary key: ML trend nudge — improving users see harder missions first,
-    # declining users see easier missions first. Same-affinity, same-trend = neutral.
+    # Latest ML trend drives both ordering (which missions surface first) and the
+    # preview target (how hard they'll be) — computed once for the whole list.
     latest_pred = (
         db.query(MlPrediction)
         .filter(MlPrediction.user_id == current_user.id)
@@ -210,18 +329,43 @@ def get_missions(
         .first()
     )
     trend = latest_pred.trend if latest_pred else None
+    has_history = _has_recent_history(current_user.id, db)
 
     type_priority = GOAL_TYPE_PRIORITY.get(current_user.primary_goal or "strength", {})
     default_priority = len(type_priority)  # unrecognized types go last
 
-    def _sort_key(m: MissionTemplateOut) -> tuple:
-        # ML trend is primary: improving → hardest (highest XP) first; declining → easiest first
-        xp_rank = -m.base_xp if trend == "improving" else (m.base_xp if trend == "declining" else 0)
-        # Goal affinity is secondary tiebreaker within the same XP band
-        goal_rank = type_priority.get(m.type, default_priority)
-        return (xp_rank, goal_rank)
+    def _focus_rank(focus: str | None) -> int:
+        # Trend-matched missions surface first, then universal, then the rest.
+        if trend and focus == trend:
+            return 0
+        if not focus:
+            return 1
+        return 2
 
-    available.sort(key=_sort_key)
+    eligible = []
+    for t in all_templates:
+        if t.id in active_template_ids:
+            continue
+        # Hide path-specific missions until the user has chosen a matching path.
+        if t.campaign_path_filter:
+            if not user_path or t.campaign_path_filter != user_path:
+                continue
+        eligible.append(t)
+
+    eligible.sort(key=lambda t: (
+        _focus_rank(t.trend_focus),
+        type_priority.get(t.type, default_priority),
+        -t.base_xp,
+    ))
+
+    available = []
+    for t in eligible:
+        tmpl_out = MissionTemplateOut.model_validate(t)
+        tmpl_out.category = MISSION_TYPE_CATEGORY.get(t.type, t.type)
+        # preview_target now equals the real target the user will get (no jump on accept).
+        target, _, _ = _compute_target(current_user, t, db, trend, has_history)
+        tmpl_out.preview_target = target
+        available.append(tmpl_out)
 
     reroll_available, next_reroll_at = _reroll_status(progress, now)
 
@@ -298,32 +442,19 @@ def accept_mission(
     if len(active_count) >= 2:
         raise HTTPException(status_code=400, detail="Maximum 2 active missions. Complete or wait for one to expire.")
 
-    # Scale target in three layers:
-    #   1. Experience tier raises the baseline (advanced players start harder).
-    #   2. Player level compounds difficulty_scale as they progress.
-    #   3. ML trend applies the adaptive multiplier (core adaptive-difficulty
-    #      mechanism): improving → harder, declining → easier, plateau → neutral.
-    # Cap at 5× the (experience-adjusted) base to prevent impossible targets.
-    progress = db.query(UserProgress).filter(
-        UserProgress.user_id == current_user.id
-    ).first()
-    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
-    level = progress.level if progress else 1
-    capped_level = min(level, 50)
-    trend_mult = _trend_multiplier(_latest_trend(current_user.id, db))
-    raw_target = (
-        template.base_target
-        * exp_mult
-        * (template.difficulty_scale ** max(0, capped_level - 1))
-        * trend_mult
+    # Adaptive target: personal baseline × template difficulty × ML trend factor.
+    trend = _latest_trend(current_user.id, db)
+    has_history = _has_recent_history(current_user.id, db)
+    adjusted_target, baseline_value, _ = _compute_target(
+        current_user, template, db, trend, has_history
     )
-    max_target = template.base_target * exp_mult * 5.0
-    adjusted_target = min(raw_target, max_target)
 
     mission = UserMission(
         user_id=current_user.id,
         mission_template_id=template_id,
-        adjusted_target=round(adjusted_target, 1),
+        adjusted_target=adjusted_target,
+        applied_trend=trend,
+        baseline_value=baseline_value,
         current_progress=0.0,
         status="active",
         expires_at=now + timedelta(days=template.duration_days),
@@ -430,20 +561,19 @@ def reroll_mission(
     # Mark the old mission as rerolled so progress history is preserved
     target.status = "rerolled"
 
-    # Scale target same way as accept (experience × level × ML trend)
-    exp_mult = EXPERIENCE_MULTIPLIER.get(current_user.experience_level or "beginner", 1.0)
-    capped_level = min(progress.level, 50)
-    trend_mult = _trend_multiplier(_latest_trend(current_user.id, db))
-    raw_target = new_template.base_target * exp_mult * (
-        new_template.difficulty_scale ** max(0, capped_level - 1)
-    ) * trend_mult
-    max_target = new_template.base_target * exp_mult * 5.0
-    adjusted_target = min(raw_target, max_target)
+    # Adaptive target: same logic as accept.
+    trend = _latest_trend(current_user.id, db)
+    has_history = _has_recent_history(current_user.id, db)
+    adjusted_target, baseline_value, _ = _compute_target(
+        current_user, new_template, db, trend, has_history
+    )
 
     new_mission = UserMission(
         user_id=current_user.id,
         mission_template_id=new_template.id,
-        adjusted_target=round(adjusted_target, 1),
+        adjusted_target=adjusted_target,
+        applied_trend=trend,
+        baseline_value=baseline_value,
         current_progress=0.0,
         status="active",
         expires_at=now + timedelta(days=new_template.duration_days),

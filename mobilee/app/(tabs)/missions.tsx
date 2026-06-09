@@ -12,6 +12,7 @@ import { Card }        from '../../components/ui/Card';
 import { Button }      from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { EmptyState }  from '../../components/ui/EmptyState';
+import { MlInsightModal } from '../../components/modals/MlInsightModal';
 import {
   missionApi,
   coachApi,
@@ -21,7 +22,7 @@ import {
   MlTrend,
   CoachMessageResponse,
 } from '../../services/gamificationApi';
-import { getDismissedExpiries, addDismissedExpiry } from '../../services/storage';
+import { getDismissedExpiries, addDismissedExpiry, getLastSeenTrend, setLastSeenTrend } from '../../services/storage';
 import { useAuthStore } from '../../store/authStore';
 
 // ─── Icons ────────────────────────────────────────────────────────
@@ -68,6 +69,13 @@ const TYPE_DOTS: Record<DifficultyLevel, number> = {
   hard: 4, medium: 3, easy: 1,
 };
 
+// ML trend → accent color for the adaptive-difficulty explanation chip.
+const TREND_COLOR_M: Record<string, string> = {
+  improving: Colors.up,
+  plateau:   Colors.flat,
+  declining: Colors.dn,
+};
+
 // Short motivational tagline appended below the bare {target}-substituted description.
 // Keyed by mission template `type` so flavor stays consistent without backend churn.
 const FLAVOR_TEXT: Record<string, string> = {
@@ -100,6 +108,7 @@ export default function MissionsScreen() {
   const [nextRerollAt,    setNextRerollAt]    = useState<string | null>(null);
   const [rerollingId,     setRerollingId]     = useState<string | null>(null);
   const [selected, setSelected]       = useState<string[]>([]);
+  const [insightTrend, setInsightTrend] = useState<MlTrend | null>(null);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
   const [accepting, setAccepting]     = useState(false);
@@ -107,18 +116,22 @@ export default function MissionsScreen() {
 
   const fetchMissions = useCallback(async () => {
     try {
-      const [missionsRes, coachRes, progressRes, dismissed] = await Promise.all([
+      const [missionsRes, coachRes, progressRes, dismissed, lastTrend] = await Promise.all([
         missionApi.getAll(),
         coachApi.getMessages(5).catch(() => null),  // coach is optional, don't break missions if it fails
         progressApi.get().catch(() => null),         // level is optional; default to 1 on failure
         getDismissedExpiries(),
+        getLastSeenTrend(),
       ]);
       setActiveMissions(missionsRes.data.active);
       setCompletedMissions(missionsRes.data.completed ?? []);
       const expired = (missionsRes.data.expired ?? []).filter(m => !dismissed.includes(m.id));
       setExpiredMissions(expired);
       setAvailableTemplates(missionsRes.data.available);
-      setTrend(missionsRes.data.trend ?? null);
+      const newTrend = missionsRes.data.trend ?? null;
+      setTrend(newTrend);
+      // Surface the "coach update" insight modal once whenever the trend changes.
+      if (newTrend && lastTrend !== newTrend) setInsightTrend(newTrend);
       setRerollAvailable(missionsRes.data.reroll_available ?? true);
       setRerollCost(missionsRes.data.reroll_cost ?? 0);
       setNextRerollAt(missionsRes.data.next_reroll_at ?? null);
@@ -146,6 +159,11 @@ export default function MissionsScreen() {
     try { await fetchMissions(); }
     finally { setRefreshing(false); }
   }, [fetchMissions]);
+
+  const closeInsight = useCallback(async () => {
+    if (insightTrend) await setLastSeenTrend(insightTrend);
+    setInsightTrend(null);
+  }, [insightTrend]);
 
   // ── Reroll an active mission ────────────────────────────────────
   // Once-per-week, costs coins. Confirmation dialog spells out both costs
@@ -249,6 +267,12 @@ export default function MissionsScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <MlInsightModal
+        visible={insightTrend !== null}
+        trend={insightTrend}
+        coachText={coachMsg?.message_text ?? null}
+        onClose={closeInsight}
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.scroll}
@@ -343,6 +367,7 @@ export default function MissionsScreen() {
                 : 0;
               const tc = TYPE_COLOR[diff];
               const flavor = FLAVOR_TEXT[m.type];
+              const adaptColor = m.applied_trend ? TREND_COLOR_M[m.applied_trend] : Colors.flat;
 
               return (
                 <View key={m.id} style={s.mcard}>
@@ -362,6 +387,12 @@ export default function MissionsScreen() {
                     </View>
                   </View>
                   <Text style={s.mDesc}>{m.description}</Text>
+                  {m.adaptation_note && (
+                    <View style={[s.adaptChip, { backgroundColor: `${adaptColor}14`, borderColor: `${adaptColor}33` }]}>
+                      {IZap(adaptColor)}
+                      <Text style={[s.adaptChipText, { color: adaptColor }]}>{m.adaptation_note}</Text>
+                    </View>
+                  )}
                   {flavor && <Text style={s.mFlavor}>{flavor}</Text>}
                   <ProgressBar
                     value={pct}
@@ -682,6 +713,13 @@ const s = StyleSheet.create({
     fontSize: 12, fontFamily: Fonts.regular, color: Colors.t3,
     fontStyle: 'italic', marginBottom: 12, marginTop: -6, lineHeight: 17,
   },
+  adaptChip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    gap: 5, paddingHorizontal: 9, paddingVertical: 4,
+    borderRadius: Radius.sm, borderWidth: 1,
+    marginTop: 2, marginBottom: 12,
+  },
+  adaptChipText: { fontSize: 11, fontFamily: Fonts.semiBold, letterSpacing: 0.2 },
   scaleRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: Colors.s4,

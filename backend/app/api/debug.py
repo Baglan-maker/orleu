@@ -5,7 +5,7 @@ Only available when APP_ENV == "development".
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta, date
 import random
 
@@ -16,9 +16,22 @@ from app.models import (
     UserMission, UserAchievement, CampaignChapter, Campaign,
 )
 from app.models.workout import WorkoutExercise
+from app.models.ml import MlPrediction, CoachMessage
+from app.services.coach_service import generate_message
 from app.services.dependencies import get_current_user
 from app.services.gamification_service import check_and_award_achievements, try_advance_chapter
 from app.tasks.nightly_ml import run_nightly_predictions
+# Single source of truth for leveling + XP so debug seeding matches real workouts.
+from app.api.workouts import (
+    _recalculate_level, _XP_THRESHOLDS, MAX_LEVEL,
+    BASE_XP_PER_WORKOUT, XP_PER_EXERCISE, XP_PER_1000KG_VOL,
+)
+
+
+def _xp_floor_for_level(level: int) -> int:
+    """Minimum cumulative XP to be at the given level (1-indexed)."""
+    lvl = max(1, min(level, MAX_LEVEL))
+    return sum(_XP_THRESHOLDS[: lvl - 1])
 
 router = APIRouter()
 
@@ -181,10 +194,13 @@ def time_travel(
         progress.longest_streak = max(progress.longest_streak or 0, body.set_campaign_streak)
 
     if body.set_level is not None:
-        progress.level = body.set_level
+        # Keep XP consistent with level so the next real workout doesn't snap it back.
+        progress.xp = _xp_floor_for_level(body.set_level)
+        progress.level = _recalculate_level(progress.xp)
 
     if body.set_xp is not None:
         progress.xp = body.set_xp
+        progress.level = _recalculate_level(progress.xp)
 
     if body.set_coins is not None:
         progress.coins = body.set_coins
@@ -249,6 +265,128 @@ def trigger_ml(db: Session = Depends(get_db)):
     return {"processed_users": processed}
 
 
+class SetTrendRequest(BaseModel):
+    trend: Literal["improving", "plateau", "declining"]
+    confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    make_eligible: bool = Field(
+        default=True,
+        description="Backdate created_at so the real nightly job would also pick this user up",
+    )
+
+
+@router.post("/set-trend")
+def set_trend(
+    body: SetTrendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Force today's ML trend for the current user (dev only).
+
+    This is the fast lever for demoing adaptive missions: set a trend, then open
+    Missions and accept one — the target and the explanation chip reflect it
+    immediately. No need to wait for the nightly job.
+    """
+    _require_dev()
+
+    # Optionally make the user pass the 14-day eligibility gate (for the real job).
+    if body.make_eligible:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=15)
+        if current_user.created_at is None or current_user.created_at > cutoff:
+            current_user.created_at = cutoff
+
+    today = date.today()
+    # Plausible feature/SHAP payloads so the coach + UI have something to show.
+    features = {
+        "weekly_volume_delta":   {"improving": 0.18, "plateau": 0.0, "declining": -0.18}[body.trend],
+        "session_frequency":     {"improving": 0.7,  "plateau": 0.45, "declining": 0.25}[body.trend],
+        "load_progression":      {"improving": 1.08, "plateau": 1.0, "declining": 0.92}[body.trend],
+        "consistency_score":     {"improving": 0.8,  "plateau": 0.5, "declining": 0.25}[body.trend],
+        "nutrition_consistency": 0.5,
+    }
+    shap = {k: round(v - (0.5 if k == "load_progression" else 0.0), 3) for k, v in features.items()}
+
+    pred = (
+        db.query(MlPrediction)
+        .filter(MlPrediction.user_id == current_user.id, MlPrediction.prediction_date == today)
+        .first()
+    )
+    if pred:
+        pred.trend = body.trend
+        pred.confidence = body.confidence
+        pred.features_json = features
+        pred.shap_values = shap
+        pred.model_version = "debug"
+    else:
+        pred = MlPrediction(
+            user_id=current_user.id,
+            prediction_date=today,
+            trend=body.trend,
+            confidence=body.confidence,
+            features_json=features,
+            shap_values=shap,
+            model_version="debug",
+        )
+        db.add(pred)
+
+    db.flush()  # ensure pred.id is set
+
+    # Regenerate the coach message for this prediction so the inbox + insight
+    # modal reflect the new trend right away (LLM if configured, else template).
+    coach_text = None
+    try:
+        db.query(CoachMessage).filter(CoachMessage.prediction_id == pred.id).delete()
+        msg = generate_message(current_user.id, pred, db)
+        coach_text = msg.message_text if msg else None
+    except Exception:
+        pass
+
+    db.commit()
+    return {
+        "trend": body.trend,
+        "confidence": body.confidence,
+        "prediction_date": str(today),
+        "eligible_backdated": body.make_eligible,
+        "coach_message": coach_text,
+    }
+
+
+@router.get("/llm-check")
+def llm_check():
+    """
+    Report whether the OpenRouter LLM is reachable from THIS running process.
+    Dev only. Use this to diagnose 'the coach isn't using the LLM':
+      - api_key_loaded == False  → .env not loaded (start uvicorn from backend/)
+      - ok == False with a 4xx   → bad model id / rate limit / account setting
+      - ok == True               → LLM works; coach messages will use it
+    """
+    _require_dev()
+    from app.services import llm_service
+
+    result: dict = {
+        "api_key_loaded": bool(settings.OPENROUTER_API_KEY),
+        "primary_model":  settings.OPENROUTER_PRIMARY_MODEL,
+        "fallback_model": settings.OPENROUTER_FALLBACK_MODEL,
+    }
+    if not settings.OPENROUTER_API_KEY:
+        result["ok"] = False
+        result["detail"] = "OPENROUTER_API_KEY is empty in this process — .env not loaded. Start uvicorn from the backend/ directory."
+        return result
+    try:
+        result["sample"] = llm_service.generate_coach_message(
+            trend="improving",
+            confidence=0.9,
+            shap_values={"weekly_volume_delta": 0.4, "consistency_score": 0.3},
+            user_context={"experience_level": "beginner", "primary_goal": "strength",
+                          "level": 1, "current_streak": 0, "total_workouts": 5},
+        )
+        result["ok"] = True
+    except Exception as e:
+        result["ok"] = False
+        result["detail"] = f"{type(e).__name__}: {e}"
+    return result
+
+
 @router.post("/seed-workout-history", response_model=SeedWorkoutHistoryResponse)
 def seed_workout_history(
     body: SeedWorkoutHistoryRequest,
@@ -272,6 +410,7 @@ def seed_workout_history(
 
     today = date.today()
     created_count = 0
+    total_seeded_xp = 0
 
     for i in range(body.count):
         if body.consecutive:
@@ -291,18 +430,29 @@ def seed_workout_history(
         db.add(workout)
         db.flush()
 
-        # Add exercises
+        # Add exercises, accumulating volume so XP matches a real logged workout.
         selected = random.sample(exercises, min(body.exercises_per_workout, len(exercises)))
+        workout_volume = 0.0
         for j, ex in enumerate(selected):
+            sets   = random.randint(3, 5)
+            reps   = random.randint(6, 15)
+            weight = round(random.uniform(20, 100), 1)
             db.add(WorkoutExercise(
                 workout_id=workout.id,
                 exercise_id=ex.id,
-                sets=random.randint(3, 5),
-                reps=random.randint(6, 15),
-                weight_kg=round(random.uniform(20, 100), 1),
+                sets=sets,
+                reps=reps,
+                weight_kg=weight,
                 order_index=j,
             ))
+            workout_volume += sets * reps * weight
 
+        # Same XP formula as a real workout — single source of truth.
+        total_seeded_xp += (
+            BASE_XP_PER_WORKOUT
+            + len(selected) * XP_PER_EXERCISE
+            + int(workout_volume / 1000) * XP_PER_1000KG_VOL
+        )
         created_count += 1
 
     # Update progress counters
@@ -315,18 +465,10 @@ def seed_workout_history(
             progress.longest_streak = max(progress.longest_streak or 0, body.count)
             progress.last_workout_at = datetime.now(timezone.utc)
 
-        # Award XP for seeded workouts
-        xp_per = 50 + body.exercises_per_workout * 10
-        progress.xp += xp_per * body.count
+        progress.xp += total_seeded_xp
         progress.coins += 10 * body.count
-
-        # Recalculate level
-        xp_remaining = progress.xp
-        new_level = 1
-        while xp_remaining >= int(100 * (1.15 ** (new_level - 1))):
-            xp_remaining -= int(100 * (1.15 ** (new_level - 1)))
-            new_level += 1
-        progress.level = new_level
+        # Real fixed-threshold leveling (1-5), so it never jumps then snaps back.
+        progress.level = _recalculate_level(progress.xp)
 
     db.flush()
 

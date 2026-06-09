@@ -11,6 +11,7 @@ const KEYS = {
   USER:                'orleu_user',
   DISMISSED_EXPIRIES:  'orleu_dismissed_mission_expiries',
   SEEN_PRS:            'orleu_seen_prs',
+  LAST_SEEN_TREND:     'orleu_last_seen_trend',
 } as const;
 
 // ─── Access Token ────────────────────────────────────────────────
@@ -80,6 +81,16 @@ export async function markPrsSeen(fingerprints: string[]) {
   await SecureStore.setItemAsync(KEYS.SEEN_PRS, JSON.stringify(merged));
 }
 
+// ─── Last-seen ML trend ──────────────────────────────────────────
+// Lets the Missions screen show the "coach update" insight modal once per
+// trend change, instead of on every refresh.
+export async function getLastSeenTrend(): Promise<string | null> {
+  return SecureStore.getItemAsync(KEYS.LAST_SEEN_TREND);
+}
+export async function setLastSeenTrend(trend: string) {
+  await SecureStore.setItemAsync(KEYS.LAST_SEEN_TREND, trend);
+}
+
 // ─── Clear all (logout) ──────────────────────────────────────────
 export async function clearAll() {
   await Promise.all([
@@ -88,5 +99,6 @@ export async function clearAll() {
     removeUser(),
     SecureStore.deleteItemAsync(KEYS.DISMISSED_EXPIRIES),
     SecureStore.deleteItemAsync(KEYS.SEEN_PRS),
+    SecureStore.deleteItemAsync(KEYS.LAST_SEEN_TREND),
   ]);
 }

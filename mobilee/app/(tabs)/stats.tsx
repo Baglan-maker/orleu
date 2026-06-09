@@ -231,13 +231,13 @@ export default function ProfileScreen() {
 
   const { achievements: storeAchievements, fetchAchievements } = useAchievementStore();
 
-  // Debug: 5-tap on level badge
+  // Debug: 2-tap on level badge
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function handleLevelTap() {
     tapCountRef.current += 1;
     if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    if (tapCountRef.current >= 5) {
+    if (tapCountRef.current >= 2) {
       tapCountRef.current = 0;
       router.push('/debug');
       return;

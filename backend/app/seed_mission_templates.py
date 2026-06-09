@@ -20,6 +20,7 @@ TEMPLATES = [
         "base_xp": 150,
         "base_coins": 30,
         "duration_days": 7,
+        "trend_focus": "improving",
     },
     {
         "name": "Tonnage King",
@@ -30,6 +31,7 @@ TEMPLATES = [
         "base_xp": 180,
         "base_coins": 35,
         "duration_days": 7,
+        "trend_focus": "improving",
     },
     # ── Consistency missions (Doc §5: "consistency") ──
     {
@@ -51,6 +53,7 @@ TEMPLATES = [
         "base_xp": 80,
         "base_coins": 15,
         "duration_days": 7,
+        "trend_focus": "declining",
     },
     # ── Intensity / muscle-specific missions (Doc §5: "intensity") ──
     {
@@ -95,6 +98,7 @@ TEMPLATES = [
         "base_coins": 22,
         "duration_days": 7,
         "campaign_path_filter": "B",
+        "trend_focus": "plateau",
     },
     # ── Additional endurance/variety missions ──
     # "Movement Variety" fills the gap for path-A users who chose endurance:
@@ -108,6 +112,7 @@ TEMPLATES = [
         "base_xp": 110,
         "base_coins": 22,
         "duration_days": 7,
+        "trend_focus": "plateau",
     },
     # "Endurance Block" bridges the gap between Comeback (1 session) and
     # Weekly Warrior (4 sessions/7 days) for endurance-goal users.
@@ -120,6 +125,41 @@ TEMPLATES = [
         "base_xp": 95,
         "base_coins": 18,
         "duration_days": 14,
+        "trend_focus": "declining",
+    },
+    # ── Trend-specific missions (surfaced first when the user is in that state) ──
+    {
+        "name": "Power Surge",
+        "type": "total_volume",
+        "description_template": "Lift {target} kg total volume this week",
+        "base_target": 6000,
+        "difficulty_scale": 1.0,
+        "base_xp": 200,
+        "base_coins": 40,
+        "duration_days": 7,
+        "trend_focus": "improving",
+    },
+    {
+        "name": "Wake-Up Call",
+        "type": "muscle_sets",
+        "description_template": "Complete {target} shoulder sets this week",
+        "base_target": 14,
+        "difficulty_scale": 1.0,
+        "base_xp": 120,
+        "base_coins": 25,
+        "duration_days": 7,
+        "trend_focus": "plateau",
+    },
+    {
+        "name": "Just Show Up",
+        "type": "workout_count",
+        "description_template": "Log {target} workouts this week",
+        "base_target": 2,
+        "difficulty_scale": 1.0,
+        "base_xp": 80,
+        "base_coins": 15,
+        "duration_days": 7,
+        "trend_focus": "declining",
     },
 ]
 
@@ -145,6 +185,7 @@ def seed():
                 base_coins=data["base_coins"],
                 campaign_path_filter=data.get("campaign_path_filter"),
                 duration_days=data.get("duration_days", 7),
+                trend_focus=data.get("trend_focus"),
             ))
             added += 1
         db.commit()

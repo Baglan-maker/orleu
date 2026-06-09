@@ -151,19 +151,29 @@ class TestMissions:
         resp = client.post(f"/api/missions/{fake_id}/accept", headers=auth_header)
         assert resp.status_code == 404
 
-    def test_mission_scales_with_level(self, client, db, auth_header, test_user, sample_missions):
-        # Set user level to 5
-        progress = db.query(UserProgress).filter(
-            UserProgress.user_id == test_user.id
-        ).first()
-        progress.level = 5
-        db.flush()
+    def test_mission_target_adapts_to_trend(self, client, db, auth_header, test_user, sample_missions):
+        # An 'improving' trend applies a visible +15% adaptive multiplier on top
+        # of the (cold-start) baseline, and surfaces the change in the description.
+        from datetime import date as _date
+        from app.models.ml import MlPrediction
+        db.add(MlPrediction(
+            user_id=test_user.id,
+            prediction_date=_date.today(),
+            trend="improving",
+            confidence=0.9,
+            features_json={},
+            shap_values={},
+            model_version="test",
+        ))
+        db.commit()
 
-        template = sample_missions[0]  # difficulty_scale=1.1
+        template = sample_missions[0]  # total_reps
         resp = client.post(f"/api/missions/{template.id}/accept", headers=auth_header)
         assert resp.status_code == 201
-        # adjusted_target = 100 * 1.1^4 ≈ 146.41
-        assert resp.json()["adjusted_target"] > template.base_target
+        data = resp.json()
+        assert data["adjusted_target"] > template.base_target
+        assert data["applied_trend"] == "improving"
+        assert data["adaptation_note"]  # chip text is populated
 
 
 # ---------------------------------------------------------------------------
